@@ -13,6 +13,7 @@ import {
   ChatAgent,
   ChatMessage,
   ChatSenderType,
+  ChatSessionStatus,
   ChatSessionAgent,
   ChatSessionAgentState,
   type ChatStreamEvent,
@@ -88,6 +89,32 @@ const agentStateDotClass: Record<ChatSessionAgentState, string> = {
   waitingapproval: 'bg-brand-secondary',
   dead: 'bg-error',
 };
+
+const messagePalette = [
+  { bg: 'rgba(226, 239, 255, 0.8)', border: 'rgba(176, 205, 242, 0.7)' },
+  { bg: 'rgba(231, 249, 239, 0.85)', border: 'rgba(176, 223, 198, 0.7)' },
+  { bg: 'rgba(255, 243, 227, 0.85)', border: 'rgba(231, 204, 173, 0.7)' },
+  { bg: 'rgba(245, 236, 255, 0.8)', border: 'rgba(209, 187, 234, 0.7)' },
+  { bg: 'rgba(255, 236, 242, 0.8)', border: 'rgba(232, 184, 198, 0.7)' },
+  { bg: 'rgba(238, 244, 248, 0.85)', border: 'rgba(189, 205, 217, 0.7)' },
+];
+
+function hashKey(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getMessageTone(key: string, isUser: boolean) {
+  if (isUser) {
+    return { bg: 'rgba(219, 238, 255, 0.9)', border: 'rgba(156, 197, 237, 0.8)' };
+  }
+  const index = hashKey(key) % messagePalette.length;
+  return messagePalette[index];
+}
 
 function extractMentions(content: string): Set<string> {
   const mentions = new Set<string>();
@@ -212,6 +239,22 @@ export function ChatSessions() {
     [sessions]
   );
 
+  const activeSessions = useMemo(
+    () =>
+      sortedSessions.filter(
+        (session) => session.status === ChatSessionStatus.active
+      ),
+    [sortedSessions]
+  );
+
+  const archivedSessions = useMemo(
+    () =>
+      sortedSessions.filter(
+        (session) => session.status === ChatSessionStatus.archived
+      ),
+    [sortedSessions]
+  );
+
   const activeSessionId = sessionId ?? sortedSessions[0]?.id ?? null;
 
   useEffect(() => {
@@ -272,6 +315,7 @@ export function ChatSessions() {
   const [logError, setLogError] = useState<string | null>(null);
   const [runningSince, setRunningSince] = useState<Record<string, number>>({});
   const [clock, setClock] = useState(() => Date.now());
+  const [showArchived, setShowArchived] = useState(false);
   const [runDiffs, setRunDiffs] = useState<
     Record<
       string,
@@ -485,6 +529,22 @@ export function ChatSessions() {
     },
   });
 
+  const archiveSessionMutation = useMutation({
+    mutationFn: (id: string) => chatApi.archiveSession(id),
+    onSuccess: (session) => {
+      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+      navigate(`/chat/${session.id}`);
+    },
+  });
+
+  const restoreSessionMutation = useMutation({
+    mutationFn: (id: string) => chatApi.restoreSession(id),
+    onSuccess: (session) => {
+      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+      navigate(`/chat/${session.id}`);
+    },
+  });
+
   const sendMessageMutation = useMutation({
     mutationFn: async (params: { sessionId: string; content: string }) =>
       chatApi.createMessage(
@@ -500,7 +560,7 @@ export function ChatSessions() {
   });
 
   const handleSend = async () => {
-    if (!activeSessionId) return;
+    if (!activeSessionId || isArchived) return;
     const trimmed = draft.trim();
     const contentMentions = extractMentions(draft);
     const mentionsToInject = selectedMentions.filter(
@@ -694,10 +754,22 @@ export function ChatSessions() {
     () => sessions.find((session) => session.id === activeSessionId),
     [sessions, activeSessionId]
   );
+  const isArchived =
+    activeSession?.status === ChatSessionStatus.archived;
+
+  useEffect(() => {
+    if (activeSession?.status === ChatSessionStatus.archived) {
+      setShowArchived(true);
+    }
+  }, [activeSession?.status]);
 
   const handleAddMember = async () => {
     if (!activeSessionId) {
       setMemberError('Select a chat session first.');
+      return;
+    }
+    if (isArchived) {
+      setMemberError('This session is archived and read-only.');
       return;
     }
 
@@ -824,6 +896,10 @@ export function ChatSessions() {
   };
 
   const handleEditMember = (member: SessionMember) => {
+    if (isArchived) {
+      setMemberError('This session is archived and read-only.');
+      return;
+    }
     setEditingMember(member);
     setNewMemberName(member.agent.name);
     setNewMemberRunnerType(member.agent.runner_type);
@@ -835,6 +911,10 @@ export function ChatSessions() {
 
   const handleRemoveMember = async (member: SessionMember) => {
     if (!activeSessionId) return;
+    if (isArchived) {
+      setMemberError('This session is archived and read-only.');
+      return;
+    }
     const confirmed = window.confirm(
       `Remove @${member.agent.name} from this session?`
     );
@@ -956,6 +1036,7 @@ export function ChatSessions() {
     isSessionAgentsLoading;
   const canSend =
     !!activeSessionId &&
+    !isArchived &&
     (draft.trim().length > 0 || selectedMentions.length > 0) &&
     !sendMessageMutation.isPending;
 
@@ -991,12 +1072,12 @@ export function ChatSessions() {
           </PrimaryButton>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-base space-y-half">
-          {sortedSessions.length === 0 && (
+          {activeSessions.length === 0 && archivedSessions.length === 0 && (
             <div className="text-sm text-low">
               No sessions yet. Create your first group chat.
             </div>
           )}
-          {sortedSessions.map((session) => {
+          {activeSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             return (
               <button
@@ -1021,6 +1102,44 @@ export function ChatSessions() {
               </button>
             );
           })}
+          {archivedSessions.length > 0 && (
+            <div className="pt-base mt-base border-t border-border space-y-half">
+              <button
+                type="button"
+                onClick={() => setShowArchived((prev) => !prev)}
+                className="text-xs text-low uppercase tracking-wide hover:text-normal"
+              >
+                {showArchived ? 'Hide Archived' : 'Show Archived'} (
+                {archivedSessions.length})
+              </button>
+              {showArchived &&
+                archivedSessions.map((session) => {
+                  const isActive = session.id === activeSessionId;
+                  return (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => navigate(`/chat/${session.id}`)}
+                      className={cn(
+                        'w-full text-left rounded-sm border px-base py-half',
+                        isActive
+                          ? 'border-brand bg-brand/10 text-normal'
+                          : 'border-transparent hover:border-border hover:bg-secondary text-low'
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-base">
+                        <span className="text-sm font-medium truncate text-normal">
+                          {session.title || 'Untitled session'}
+                        </span>
+                        <span className="text-xs text-low">
+                          {formatDateShortWithTime(session.updated_at)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -1036,15 +1155,47 @@ export function ChatSessions() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-base text-xs text-low">
-            <UsersIcon className="size-icon-xs" />
-            <span>{sessionMembers.length} AI members</span>
+          <div className="flex items-center gap-base">
+            <div className="flex items-center gap-base text-xs text-low">
+              <UsersIcon className="size-icon-xs" />
+              <span>{sessionMembers.length} AI members</span>
+            </div>
+            {activeSession && (
+              <div className="flex items-center gap-half">
+                {isArchived && (
+                  <Badge variant="secondary" className="text-xs">
+                    Archived
+                  </Badge>
+                )}
+                <PrimaryButton
+                  variant="secondary"
+                  value={isArchived ? 'Restore' : 'Archive'}
+                  onClick={() => {
+                    if (!activeSessionId) return;
+                    if (isArchived) {
+                      restoreSessionMutation.mutate(activeSessionId);
+                    } else {
+                      archiveSessionMutation.mutate(activeSessionId);
+                    }
+                  }}
+                  disabled={
+                    archiveSessionMutation.isPending ||
+                    restoreSessionMutation.isPending
+                  }
+                />
+              </div>
+            )}
           </div>
         </header>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-base space-y-base">
           {isLoading && (
             <div className="text-sm text-low">Loading chat...</div>
+          )}
+          {isArchived && !isLoading && (
+            <div className="text-xs text-low border border-border rounded-sm bg-secondary/60 px-base py-half">
+              This session is archived. Messages and members are read-only.
+            </div>
           )}
           {!isLoading && messageList.length === 0 && (
             <div className="text-sm text-low">
@@ -1060,6 +1211,10 @@ export function ChatSessions() {
                 ? agentById.get(message.sender_id)?.name ?? 'Agent'
                 : null;
             const diffMeta = isAgent ? extractDiffMeta(message.meta) : null;
+            const toneKey = isUser
+              ? 'user'
+              : message.sender_id ?? agentName ?? 'agent';
+            const tone = getMessageTone(String(toneKey), isUser);
 
             if (message.sender_type === ChatSenderType.system) {
               return (
@@ -1072,171 +1227,184 @@ export function ChatSessions() {
             }
 
             return (
-              <ChatEntryContainer
+              <div
                 key={message.id}
-                variant={isUser ? 'user' : 'system'}
-                title={isUser ? 'You' : agentName ?? 'Agent'}
-                expanded
-                headerRight={
-                  <span className="text-xs text-low">
-                    {formatDateShortWithTime(message.created_at)}
-                  </span>
-                }
+                className={cn('flex', isUser ? 'justify-end' : 'justify-start')}
               >
-                <ChatMarkdown content={message.content} />
-                {(diffMeta?.available ||
-                  (diffMeta?.untrackedFiles ?? []).length > 0) &&
-                  diffMeta.runId && (
-                    <div className="mt-half border border-border rounded-sm bg-secondary p-base text-xs text-normal">
-                      <details
-                        onToggle={(event) => {
-                          const target = event.currentTarget as HTMLDetailsElement;
-                          if (
-                            target.open &&
-                            diffMeta.available &&
-                            diffMeta.runId
-                          ) {
-                            handleLoadDiff(diffMeta.runId);
-                          }
-                        }}
-                      >
-                        <summary className="cursor-pointer select-none">
-                          Code changes
-                        </summary>
-                        {diffMeta.available && (
-                          <div className="mt-half space-y-half">
-                            {runDiffs[diffMeta.runId]?.loading && (
-                              <div className="text-xs text-low">
-                                Loading diff...
-                              </div>
-                            )}
-                            {runDiffs[diffMeta.runId]?.error && (
-                              <div className="text-xs text-error">
-                                {runDiffs[diffMeta.runId]?.error}
-                              </div>
-                            )}
-                            {!runDiffs[diffMeta.runId]?.loading &&
-                              runDiffs[diffMeta.runId]?.files.length === 0 &&
-                              !runDiffs[diffMeta.runId]?.error && (
+                <ChatEntryContainer
+                  variant={isUser ? 'user' : 'system'}
+                  title={isUser ? 'You' : agentName ?? 'Agent'}
+                  expanded
+                  headerRight={
+                    <span className="text-xs text-low">
+                      {formatDateShortWithTime(message.created_at)}
+                    </span>
+                  }
+                  className={cn(
+                    'max-w-[720px] w-full md:w-[80%] shadow-sm rounded-2xl',
+                    isUser && 'ml-auto'
+                  )}
+                  headerClassName="bg-transparent"
+                  style={{
+                    backgroundColor: tone.bg,
+                    borderColor: tone.border,
+                  }}
+                >
+                  <ChatMarkdown content={message.content} />
+                  {(diffMeta?.available ||
+                    (diffMeta?.untrackedFiles ?? []).length > 0) &&
+                    diffMeta.runId && (
+                      <div className="mt-half border border-border rounded-sm bg-secondary/70 p-base text-xs text-normal">
+                        <details
+                          onToggle={(event) => {
+                            const target = event.currentTarget as HTMLDetailsElement;
+                            if (
+                              target.open &&
+                              diffMeta.available &&
+                              diffMeta.runId
+                            ) {
+                              handleLoadDiff(diffMeta.runId);
+                            }
+                          }}
+                        >
+                          <summary className="cursor-pointer select-none">
+                            Code changes
+                          </summary>
+                          {diffMeta.available && (
+                            <div className="mt-half space-y-half">
+                              {runDiffs[diffMeta.runId]?.loading && (
                                 <div className="text-xs text-low">
-                                  No tracked diff available.
+                                  Loading diff...
                                 </div>
                               )}
-                            {runDiffs[diffMeta.runId]?.files.map((file) => (
-                              <details
-                                key={`${diffMeta.runId}-${file.path}`}
-                                className="border border-border rounded-sm bg-panel"
-                              >
-                                <summary className="flex items-center justify-between px-base py-half cursor-pointer text-xs text-normal">
-                                  <span className="font-ibm-plex-mono">
-                                    {file.path}
-                                  </span>
-                                  <span className="text-xs text-low">
-                                    {file.additions > 0 && (
-                                      <span className="text-success">
-                                        +{file.additions}
-                                      </span>
-                                    )}
-                                    {file.additions > 0 &&
-                                      file.deletions > 0 &&
-                                      ' '}
-                                    {file.deletions > 0 && (
-                                      <span className="text-error">
-                                        -{file.deletions}
-                                      </span>
-                                    )}
-                                  </span>
-                                </summary>
-                                <div className="border-t border-border">
-                                  <DiffViewBody
-                                    fileDiffMetadata={null}
-                                    unifiedDiff={file.patch}
-                                    isValid={file.patch.trim().length > 0}
-                                    hideLineNumbers={false}
-                                    theme={actualTheme}
-                                    wrapText={false}
-                                    modeOverride="split"
-                                  />
+                              {runDiffs[diffMeta.runId]?.error && (
+                                <div className="text-xs text-error">
+                                  {runDiffs[diffMeta.runId]?.error}
                                 </div>
-                              </details>
-                            ))}
-                            <div className="mt-half">
-                              <button
-                                type="button"
-                                className="text-brand hover:text-brand-hover"
-                                onClick={() =>
-                                  window.open(
-                                    chatApi.getRunDiffUrl(diffMeta.runId!),
-                                    '_blank',
-                                    'noopener,noreferrer'
-                                  )
-                                }
-                              >
-                                Open raw diff
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        {diffMeta.untrackedFiles.length > 0 && (
-                          <div className="mt-base space-y-half">
-                            <div className="text-xs text-low">
-                              Untracked files
-                            </div>
-                            {diffMeta.untrackedFiles.map((path) => {
-                              const key = `${diffMeta.runId}:${path}`;
-                              const entry = untrackedContent[key];
-                              return (
-                                <div
-                                  key={key}
-                                  className="border border-border rounded-sm bg-panel px-base py-half"
-                                >
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="font-ibm-plex-mono break-all">
-                                      {path}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="text-brand hover:text-brand-hover"
-                                      onClick={() =>
-                                        handleToggleUntracked(
-                                          diffMeta.runId!,
-                                          path
-                                        )
-                                      }
-                                    >
-                                      {entry?.open ? 'Hide' : 'View'}
-                                    </button>
+                              )}
+                              {!runDiffs[diffMeta.runId]?.loading &&
+                                runDiffs[diffMeta.runId]?.files.length === 0 &&
+                                !runDiffs[diffMeta.runId]?.error && (
+                                  <div className="text-xs text-low">
+                                    No tracked diff available.
                                   </div>
-                                  {entry?.open && (
-                                    <div className="mt-half">
-                                      {entry.loading && (
-                                        <div className="text-xs text-low">
-                                          Loading file...
-                                        </div>
+                                )}
+                              {runDiffs[diffMeta.runId]?.files?.map((file) => (
+                                <details
+                                  key={`${diffMeta.runId}-${file.path}`}
+                                  className="border border-border rounded-sm bg-panel"
+                                >
+                                  <summary className="flex items-center justify-between px-base py-half cursor-pointer text-xs text-normal">
+                                    <span className="font-ibm-plex-mono">
+                                      {file.path}
+                                    </span>
+                                    <span className="text-xs text-low">
+                                      {file.additions > 0 && (
+                                        <span className="text-success">
+                                          +{file.additions}
+                                        </span>
                                       )}
-                                      {entry.error && (
-                                        <div className="text-xs text-error">
-                                          {entry.error}
-                                        </div>
+                                      {file.additions > 0 &&
+                                        file.deletions > 0 &&
+                                        ' '}
+                                      {file.deletions > 0 && (
+                                        <span className="text-error">
+                                          -{file.deletions}
+                                        </span>
                                       )}
-                                      {!entry.loading &&
-                                        !entry.error &&
-                                        entry.content && (
-                                          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-xs font-ibm-plex-mono text-normal">
-                                            {entry.content}
-                                          </pre>
-                                        )}
+                                    </span>
+                                  </summary>
+                                  <div className="border-t border-border">
+                                    <DiffViewBody
+                                      fileDiffMetadata={null}
+                                      unifiedDiff={file.patch}
+                                      isValid={file.patch.trim().length > 0}
+                                      hideLineNumbers={false}
+                                      theme={actualTheme}
+                                      wrapText={false}
+                                      modeOverride="split"
+                                    />
+                                  </div>
+                                </details>
+                              ))}
+                              <div className="mt-half">
+                                <button
+                                  type="button"
+                                  className="text-brand hover:text-brand-hover"
+                                  onClick={() =>
+                                    window.open(
+                                      chatApi.getRunDiffUrl(diffMeta.runId!),
+                                      '_blank',
+                                      'noopener,noreferrer'
+                                    )
+                                  }
+                                >
+                                  Open raw diff
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {diffMeta.untrackedFiles.length > 0 && (
+                            <div className="mt-base space-y-half">
+                              <div className="text-xs text-low">
+                                Untracked files
+                              </div>
+                              {diffMeta.untrackedFiles.map((path) => {
+                                const key = `${diffMeta.runId}:${path}`;
+                                const entry = untrackedContent[key];
+                                return (
+                                  <div
+                                    key={key}
+                                    className="border border-border rounded-sm bg-panel px-base py-half"
+                                  >
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="font-ibm-plex-mono break-all">
+                                        {path}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="text-brand hover:text-brand-hover"
+                                        onClick={() =>
+                                          handleToggleUntracked(
+                                            diffMeta.runId!,
+                                            path
+                                          )
+                                        }
+                                      >
+                                        {entry?.open ? 'Hide' : 'View'}
+                                      </button>
                                     </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </details>
-                    </div>
-                  )}
-              </ChatEntryContainer>
+                                    {entry?.open && (
+                                      <div className="mt-half">
+                                        {entry.loading && (
+                                          <div className="text-xs text-low">
+                                            Loading file...
+                                          </div>
+                                        )}
+                                        {entry.error && (
+                                          <div className="text-xs text-error">
+                                            {entry.error}
+                                          </div>
+                                        )}
+                                        {!entry.loading &&
+                                          !entry.error &&
+                                          entry.content && (
+                                            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-xs font-ibm-plex-mono text-normal">
+                                              {entry.content}
+                                            </pre>
+                                          )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </details>
+                      </div>
+                    )}
+                </ChatEntryContainer>
+              </div>
             );
           })}
 
@@ -1246,44 +1414,64 @@ export function ChatSessions() {
               0,
               Math.floor((clock - startedAt) / 1000)
             );
+            const tone = getMessageTone(member.agent.id, false);
             return (
-              <ChatEntryContainer
+              <div
                 key={`placeholder-${member.agent.id}`}
-                variant="system"
-                title={member.agent.name}
-                expanded
-                className="opacity-80"
+                className="flex justify-start"
               >
-                <ChatMarkdown
-                  content={`回复中。。。已用${elapsedSeconds}秒`}
-                />
-              </ChatEntryContainer>
+                <ChatEntryContainer
+                  variant="system"
+                  title={member.agent.name}
+                  expanded
+                  className="max-w-[720px] w-full md:w-[80%] opacity-80 shadow-sm rounded-2xl"
+                  headerClassName="bg-transparent"
+                  style={{
+                    backgroundColor: tone.bg,
+                    borderColor: tone.border,
+                  }}
+                >
+                  <ChatMarkdown
+                    content={`回复中。。。已用${elapsedSeconds}秒`}
+                  />
+                </ChatEntryContainer>
+              </div>
             );
           })}
 
           {Object.entries(streamingRuns).map(([runId, run]) => {
             const agentName =
               agentById.get(run.agentId)?.name ?? 'Agent';
+            const tone = getMessageTone(run.agentId, false);
             return (
-              <ChatEntryContainer
+              <div
                 key={`stream-${runId}`}
-                variant="system"
-                title={agentName}
-                expanded
-                className="opacity-90"
-                headerRight={
-                  <div className="flex items-center gap-half text-xs text-low">
-                    <span>Streaming</span>
-                    <span className="flex items-center gap-[2px]">
-                      <span className="size-dot rounded-full bg-brand animate-running-dot-1" />
-                      <span className="size-dot rounded-full bg-brand animate-running-dot-2" />
-                      <span className="size-dot rounded-full bg-brand animate-running-dot-3" />
-                    </span>
-                  </div>
-                }
+                className="flex justify-start"
               >
-                <ChatMarkdown content={run.content} />
-              </ChatEntryContainer>
+                <ChatEntryContainer
+                  variant="system"
+                  title={agentName}
+                  expanded
+                  className="max-w-[720px] w-full md:w-[80%] opacity-90 shadow-sm rounded-2xl"
+                  headerClassName="bg-transparent"
+                  style={{
+                    backgroundColor: tone.bg,
+                    borderColor: tone.border,
+                  }}
+                  headerRight={
+                    <div className="flex items-center gap-half text-xs text-low">
+                      <span>Streaming</span>
+                      <span className="flex items-center gap-[2px]">
+                        <span className="size-dot rounded-full bg-brand animate-running-dot-1" />
+                        <span className="size-dot rounded-full bg-brand animate-running-dot-2" />
+                        <span className="size-dot rounded-full bg-brand animate-running-dot-3" />
+                      </span>
+                    </div>
+                  }
+                >
+                  <ChatMarkdown content={run.content} />
+                </ChatEntryContainer>
+              </div>
             );
           })}
           <div ref={bottomRef} />
@@ -1298,7 +1486,9 @@ export function ChatSessions() {
               values={selectedMentions}
               options={agentOptions}
               onChange={setSelectedMentions}
-              disabled={mentionAgents.length === 0}
+              disabled={
+                !activeSessionId || mentionAgents.length === 0 || isArchived
+              }
             />
             {selectedMentions.length > 0 && (
               <div className="flex items-center gap-half flex-wrap">
@@ -1337,11 +1527,17 @@ export function ChatSessions() {
                   handleSend();
                 }
               }}
-              placeholder="Type your message and @mention agents..."
+              placeholder={
+                isArchived
+                  ? 'This session is archived and read-only.'
+                  : 'Type your message and @mention agents...'
+              }
               rows={3}
+              disabled={isArchived || !activeSessionId}
               className={cn(
                 'w-full resize-none rounded-sm border border-border bg-panel',
-                'px-base py-half text-sm text-normal focus:outline-none focus:ring-1 focus:ring-brand'
+                'px-base py-half text-sm text-normal focus:outline-none focus:ring-1 focus:ring-brand',
+                isArchived && 'opacity-60 cursor-not-allowed'
               )}
             />
             {mentionQuery !== null && visibleMentionSuggestions.length > 0 && (
@@ -1439,15 +1635,23 @@ export function ChatSessions() {
                     </button>
                     <button
                       type="button"
-                      className="text-low hover:text-normal"
+                      className={cn(
+                        'text-low hover:text-normal',
+                        isArchived && 'pointer-events-none opacity-50'
+                      )}
                       onClick={() => handleEditMember({ agent, sessionAgent })}
+                      disabled={isArchived}
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      className="text-error hover:text-error/80"
+                      className={cn(
+                        'text-error hover:text-error/80',
+                        isArchived && 'pointer-events-none opacity-50'
+                      )}
                       onClick={() => handleRemoveMember({ agent, sessionAgent })}
+                      disabled={isArchived}
                     >
                       Remove
                     </button>
@@ -1475,7 +1679,7 @@ export function ChatSessions() {
                   setNewMemberPrompt('');
                   setNewMemberWorkspace('');
                 }}
-                disabled={!activeSessionId}
+                disabled={!activeSessionId || isArchived}
               >
                 <PlusIcon className="size-icon-xs" />
               </PrimaryButton>
@@ -1567,7 +1771,7 @@ export function ChatSessions() {
                     value={editingMember ? 'Save' : 'Add'}
                     actionIcon={isSavingMember ? 'spinner' : PlusIcon}
                     onClick={handleAddMember}
-                    disabled={isSavingMember}
+                    disabled={isSavingMember || isArchived}
                   />
                 </div>
               </div>

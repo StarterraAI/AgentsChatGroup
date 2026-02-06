@@ -96,6 +96,7 @@ import {
   MigrationRequest,
   MigrationResponse,
   ChatSession,
+  ChatSessionStatus,
   ChatMessage,
   ChatAgent,
   ChatStreamEvent,
@@ -1426,7 +1427,9 @@ export const migrationApi = {
 
 // Chat APIs
 export const chatApi = {
-  listSessions: async (status?: string): Promise<ChatSession[]> => {
+  listSessions: async (
+    status?: ChatSessionStatus
+  ): Promise<ChatSession[]> => {
     const queryParam = status ? `?status=${encodeURIComponent(status)}` : '';
     const response = await makeRequest(`/api/chat/sessions${queryParam}`);
     return handleApiResponse<ChatSession[]>(response);
@@ -1452,6 +1455,20 @@ export const chatApi = {
     const response = await makeRequest(`/api/chat/sessions/${sessionId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+    return handleApiResponse<ChatSession>(response);
+  },
+
+  archiveSession: async (sessionId: string): Promise<ChatSession> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}/archive`, {
+      method: 'POST',
+    });
+    return handleApiResponse<ChatSession>(response);
+  },
+
+  restoreSession: async (sessionId: string): Promise<ChatSession> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}/restore`, {
+      method: 'POST',
     });
     return handleApiResponse<ChatSession>(response);
   },

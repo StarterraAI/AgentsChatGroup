@@ -42,6 +42,7 @@ use tokio_util::io::ReaderStream;
 use ts_rs::TS;
 use utils::{assets::asset_dir, log_msg::LogMsg, msg_store::MsgStore};
 use uuid::Uuid;
+use crate::services::chat::ChatServiceError;
 
 const DIFF_PREVIEW_LIMIT: usize = 4000;
 const UNTRACKED_FILE_LIMIT: u64 = 1024 * 1024;
@@ -49,6 +50,12 @@ const UNTRACKED_FILE_LIMIT: u64 = 1024 * 1024;
 struct DiffInfo {
     preview: String,
     truncated: bool,
+}
+
+struct ContextSnapshot {
+    jsonl: String,
+    workspace_path: PathBuf,
+    run_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -84,6 +91,8 @@ pub enum ChatRunnerError {
     Executor(#[from] ExecutorError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    ChatService(#[from] ChatServiceError),
 }
 
 #[derive(Clone)]
@@ -223,7 +232,15 @@ impl ChatRunner {
             let raw_log_path = run_dir.join("raw.log");
             let meta_path = run_dir.join("meta.json");
 
-            let prompt = self.build_prompt(&agent, source_message);
+            let context_snapshot = self
+                .build_context_snapshot(session_id, &workspace_path, &run_dir)
+                .await?;
+            let prompt = self.build_prompt(
+                &agent,
+                source_message,
+                &context_snapshot.jsonl,
+                &context_snapshot.workspace_path,
+            );
             fs::write(&input_path, &prompt).await?;
 
             let _run = ChatRun::create(
@@ -253,6 +270,14 @@ impl ChatRunner {
             env.insert("VK_CHAT_AGENT_ID", agent_id.to_string());
             env.insert("VK_CHAT_SESSION_AGENT_ID", session_agent_id.to_string());
             env.insert("VK_CHAT_RUN_ID", run_id.to_string());
+            env.insert(
+                "VK_CHAT_CONTEXT_PATH",
+                context_snapshot.workspace_path.to_string_lossy().to_string(),
+            );
+            env.insert(
+                "VK_CHAT_CONTEXT_RUN_PATH",
+                context_snapshot.run_path.to_string_lossy().to_string(),
+            );
 
             let mut spawned = if let Some(agent_session_id) =
                 session_agent.agent_session_id.as_deref()
@@ -510,11 +535,48 @@ impl ChatRunner {
         files
     }
 
-    fn build_prompt(&self, agent: &ChatAgent, message: &ChatMessage) -> String {
+    async fn build_context_snapshot(
+        &self,
+        session_id: Uuid,
+        workspace_path: &str,
+        run_dir: &PathBuf,
+    ) -> Result<ContextSnapshot, ChatRunnerError> {
+        let messages =
+            crate::services::chat::build_structured_messages(&self.db.pool, session_id).await?;
+        let mut jsonl = String::new();
+        for message in messages {
+            let line = serde_json::to_string(&message).unwrap_or_default();
+            jsonl.push_str(&line);
+            jsonl.push('\n');
+        }
+
+        let context_dir = PathBuf::from(workspace_path).join("context");
+        fs::create_dir_all(&context_dir).await?;
+        let context_path = context_dir.join("messages.jsonl");
+        fs::write(&context_path, jsonl.as_bytes()).await?;
+
+        let run_context_path = run_dir.join("messages.jsonl");
+        fs::write(&run_context_path, jsonl.as_bytes()).await?;
+
+        Ok(ContextSnapshot {
+            jsonl,
+            workspace_path: context_path,
+            run_path: run_context_path,
+        })
+    }
+
+    fn build_prompt(
+        &self,
+        agent: &ChatAgent,
+        message: &ChatMessage,
+        context_jsonl: &str,
+        context_path: &PathBuf,
+    ) -> String {
         let mut prompt = String::new();
         prompt.push_str("[ENVELOPE]\n");
         prompt.push_str(&format!("session_id={}\n", message.session_id));
-        prompt.push_str("from=user\n");
+        let sender_handle = self.resolve_reply_handle(message);
+        prompt.push_str(&format!("from=user:{}\n", sender_handle));
         prompt.push_str(&format!("to=agent:{}\n", agent.name));
         prompt.push_str(&format!("message_id={}\n", message.id));
         prompt.push_str(&format!("timestamp={}\n", message.created_at));
@@ -525,6 +587,15 @@ impl ChatRunner {
             prompt.push_str(agent.system_prompt.trim());
             prompt.push_str("\n[/AGENT_ROLE]\n\n");
         }
+
+        prompt.push_str("[GROUP_CONTEXT]\n");
+        prompt.push_str("All group messages in JSONL format (oldest to newest).\n");
+        prompt.push_str(&format!(
+            "context_path={}\n",
+            context_path.to_string_lossy()
+        ));
+        prompt.push_str(context_jsonl);
+        prompt.push_str("\n[/GROUP_CONTEXT]\n\n");
 
         prompt.push_str("[USER_MESSAGE]\n");
         prompt.push_str(message.content.trim());

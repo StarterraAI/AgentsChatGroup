@@ -19,6 +19,8 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
                 .put(sessions::update_session)
                 .delete(sessions::delete_session),
         )
+        .route("/archive", axum::routing::post(sessions::archive_session))
+        .route("/restore", axum::routing::post(sessions::restore_session))
         .route("/stream", get(sessions::stream_session_ws))
         .route(
             "/agents",

@@ -1,4 +1,4 @@
-import { ComponentType } from 'react';
+import type { CSSProperties, ComponentType } from 'react';
 import {
   CaretDownIcon,
   UserIcon,
@@ -54,6 +54,9 @@ interface ChatEntryContainerProps {
   children?: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
+  style?: CSSProperties;
+  headerClassName?: string;
+  bodyClassName?: string;
   status?: ToolStatus;
   isGreyed?: boolean;
 }
@@ -67,6 +70,9 @@ export function ChatEntryContainer({
   children,
   actions,
   className,
+  style,
+  headerClassName,
+  bodyClassName,
   status,
   isGreyed,
 }: ChatEntryContainerProps) {
@@ -87,13 +93,15 @@ export function ChatEntryContainer({
         isGreyed && 'opacity-50 pointer-events-none',
         className
       )}
+      style={style}
     >
       {/* Header */}
       <div
         className={cn(
           'flex items-center px-double py-base gap-base rounded-sm overflow-hidden',
           config.headerBg,
-          onToggle && 'cursor-pointer'
+          onToggle && 'cursor-pointer',
+          headerClassName
         )}
         onClick={onToggle}
       >
@@ -113,7 +121,9 @@ export function ChatEntryContainer({
       </div>
 
       {/* Content - shown when expanded */}
-      {expanded && children && <div className="p-double">{children}</div>}
+      {expanded && children && (
+        <div className={cn('p-double', bodyClassName)}>{children}</div>
+      )}
 
       {/* Actions footer - optional */}
       {actions && (

@@ -86,3 +86,7 @@ vibe-kanban-cloud/
 
 .jj
 .sisyphus/
+
+# Run artifacts
+runs/
+context/

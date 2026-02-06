@@ -396,6 +396,9 @@ impl IntoResponse for ApiError {
             ApiError::Chat(ChatServiceError::Validation(msg)) => {
                 ErrorInfo::bad_request("ChatServiceError", msg.clone())
             }
+            ApiError::Chat(ChatServiceError::Io(_)) => {
+                ErrorInfo::internal("ChatServiceError")
+            }
             ApiError::Io(_) => ErrorInfo::internal("IoError"),
             ApiError::Migration(MigrationError::Database(_)) => {
                 ErrorInfo::internal("MigrationError")

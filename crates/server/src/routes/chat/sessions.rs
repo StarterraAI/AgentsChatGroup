@@ -16,6 +16,7 @@ use deployment::Deployment;
 use serde::Deserialize;
 use ts_rs::TS;
 use utils::response::ApiResponse;
+use utils::assets::asset_dir;
 use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError};
@@ -93,6 +94,12 @@ pub async fn create_session_agent(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<CreateChatSessionAgentRequest>,
 ) -> Result<ResponseJson<ApiResponse<ChatSessionAgent>>, ApiError> {
+    if session.status != ChatSessionStatus::Active {
+        return Err(ApiError::Conflict(
+            "Chat session is archived".to_string(),
+        ));
+    }
+
     if let Some(existing) = ChatSessionAgent::find_by_session_and_agent(
         &deployment.db().pool,
         session.id,
@@ -131,6 +138,12 @@ pub async fn update_session_agent(
     axum::extract::Path(session_agent_id): axum::extract::Path<Uuid>,
     Json(payload): Json<UpdateChatSessionAgentRequest>,
 ) -> Result<ResponseJson<ApiResponse<ChatSessionAgent>>, ApiError> {
+    if session.status != ChatSessionStatus::Active {
+        return Err(ApiError::Conflict(
+            "Chat session is archived".to_string(),
+        ));
+    }
+
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
     else {
@@ -175,6 +188,63 @@ pub async fn delete_session_agent(
     } else {
         Ok(ResponseJson(ApiResponse::success(())))
     }
+}
+
+pub async fn archive_session(
+    Extension(session): Extension<ChatSession>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<ChatSession>>, ApiError> {
+    if session.status == ChatSessionStatus::Archived {
+        return Ok(ResponseJson(ApiResponse::success(session)));
+    }
+
+    let archive_dir = asset_dir()
+        .join("chat")
+        .join(format!("session_{}", session.id))
+        .join("archive");
+    let archive_ref = services::services::chat::export_session_archive(
+        &deployment.db().pool,
+        &session,
+        archive_dir.as_path(),
+    )
+    .await?;
+
+    let updated = ChatSession::update(
+        &deployment.db().pool,
+        session.id,
+        &UpdateChatSession {
+            title: None,
+            status: Some(ChatSessionStatus::Archived),
+            summary_text: None,
+            archive_ref: Some(archive_ref),
+        },
+    )
+    .await?;
+
+    Ok(ResponseJson(ApiResponse::success(updated)))
+}
+
+pub async fn restore_session(
+    Extension(session): Extension<ChatSession>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<ChatSession>>, ApiError> {
+    if session.status == ChatSessionStatus::Active {
+        return Ok(ResponseJson(ApiResponse::success(session)));
+    }
+
+    let updated = ChatSession::update(
+        &deployment.db().pool,
+        session.id,
+        &UpdateChatSession {
+            title: None,
+            status: Some(ChatSessionStatus::Active),
+            summary_text: None,
+            archive_ref: None,
+        },
+    )
+    .await?;
+
+    Ok(ResponseJson(ApiResponse::success(updated)))
 }
 
 pub async fn stream_session_ws(
