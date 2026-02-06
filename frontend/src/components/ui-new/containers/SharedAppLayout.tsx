@@ -75,7 +75,7 @@ export function SharedAppLayout() {
         );
         navigate(`/projects/${sortedProjects[0].id}`);
       } else {
-        navigate('/workspaces');
+        navigate('/chat');
       }
       prevOrgIdRef.current = selectedOrgId;
     } else if (prevOrgIdRef.current === null && selectedOrgId) {
@@ -85,12 +85,17 @@ export function SharedAppLayout() {
 
   // Navigation state for AppBar active indicators
   const isWorkspacesActive = location.pathname.startsWith('/workspaces');
+  const isChatActive = location.pathname.startsWith('/chat');
   const activeProjectId = location.pathname.startsWith('/projects/')
     ? location.pathname.split('/')[2]
     : null;
 
   const handleWorkspacesClick = useCallback(() => {
     navigate('/workspaces');
+  }, [navigate]);
+
+  const handleChatClick = useCallback(() => {
+    navigate('/chat');
   }, [navigate]);
 
   const handleProjectClick = useCallback(
@@ -140,8 +145,10 @@ export function SharedAppLayout() {
             onCreateOrg={handleCreateOrg}
             onCreateProject={handleCreateProject}
             onWorkspacesClick={handleWorkspacesClick}
+            onChatClick={handleChatClick}
             onProjectClick={handleProjectClick}
             isWorkspacesActive={isWorkspacesActive}
+            isChatActive={isChatActive}
             activeProjectId={activeProjectId}
             isSignedIn={isSignedIn}
             isLoadingProjects={isLoading}

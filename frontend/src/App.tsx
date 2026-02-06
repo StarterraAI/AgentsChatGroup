@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@/i18n';
@@ -50,6 +50,7 @@ import { WorkspacesLanding } from '@/pages/ui-new/WorkspacesLanding';
 import { ElectricTestPage } from '@/pages/ui-new/ElectricTestPage';
 import { ProjectKanban } from '@/pages/ui-new/ProjectKanban';
 import { MigratePage } from '@/pages/ui-new/MigratePage';
+import { ChatSessions } from '@/pages/ui-new/ChatSessions';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
@@ -57,6 +58,17 @@ function AppContent() {
   const { config, analyticsUserId, updateAndSaveConfig } = useUserSystem();
   const posthog = usePostHog();
   const { isSignedIn } = useAuth();
+  const [disclaimerAcceptedInSession, setDisclaimerAcceptedInSession] =
+    useState<boolean>(() => {
+      if (typeof window === 'undefined') return false;
+      return sessionStorage.getItem('vk_disclaimer_ack') === 'true';
+    });
+  const [onboardingAcceptedInSession, setOnboardingAcceptedInSession] =
+    useState<boolean>(() => {
+      if (typeof window === 'undefined') return false;
+      return sessionStorage.getItem('vk_onboarding_ack') === 'true';
+    });
+  const disclaimerInFlightRef = useRef(false);
 
   // Track previous path for back navigation
   usePreviousPath();
@@ -84,18 +96,32 @@ function AppContent() {
 
     const showNextStep = async () => {
       // 1) Disclaimer - first step
-      if (!config.disclaimer_acknowledged) {
+      if (
+        !config.disclaimer_acknowledged &&
+        !disclaimerAcceptedInSession &&
+        !disclaimerInFlightRef.current
+      ) {
+        disclaimerInFlightRef.current = true;
         await DisclaimerDialog.show();
+        setDisclaimerAcceptedInSession(true);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('vk_disclaimer_ack', 'true');
+        }
         if (!cancelled) {
           await updateAndSaveConfig({ disclaimer_acknowledged: true });
         }
         DisclaimerDialog.hide();
+        disclaimerInFlightRef.current = false;
         return;
       }
 
       // 2) Onboarding - configure executor and editor
-      if (!config.onboarding_acknowledged) {
+      if (!config.onboarding_acknowledged && !onboardingAcceptedInSession) {
         const result = await OnboardingDialog.show();
+        setOnboardingAcceptedInSession(true);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('vk_onboarding_ack', 'true');
+        }
         if (!cancelled) {
           await updateAndSaveConfig({
             onboarding_acknowledged: true,
@@ -123,7 +149,13 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [config, isSignedIn, updateAndSaveConfig]);
+  }, [
+    config,
+    disclaimerAcceptedInSession,
+    onboardingAcceptedInSession,
+    isSignedIn,
+    updateAndSaveConfig,
+  ]);
 
   // TODO: Disabled while developing FE only
   // if (loading) {
@@ -157,7 +189,7 @@ function AppContent() {
                 </LegacyDesignScope>
               }
             >
-              <Route path="/" element={<Projects />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/local-projects" element={<Projects />} />
               <Route path="/local-projects/:projectId" element={<Projects />} />
               <Route path="/migration" element={<Migration />} />
@@ -215,6 +247,8 @@ function AppContent() {
               }
             >
               {/* Workspaces routes */}
+              <Route path="/chat" element={<ChatSessions />} />
+              <Route path="/chat/:sessionId" element={<ChatSessions />} />
               <Route path="/workspaces" element={<WorkspacesLanding />} />
               <Route path="/workspaces/create" element={<Workspaces />} />
               <Route

@@ -92,6 +92,7 @@ export const Pages: Record<StaticPageId, CommandBarPage> = {
         type: 'group',
         label: 'Actions',
         items: [
+          { type: 'action', action: Actions.OpenChat },
           { type: 'action', action: Actions.NewWorkspace },
           { type: 'action', action: Actions.CreateWorkspaceFromPR },
           { type: 'action', action: Actions.OpenInIDE },

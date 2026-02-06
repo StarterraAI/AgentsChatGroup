@@ -334,6 +334,7 @@ export function DiffViewBody({
   hideLineNumbers,
   theme,
   wrapText,
+  modeOverride,
 }: {
   fileDiffMetadata: FileDiffMetadata | null;
   unifiedDiff: string | null;
@@ -341,14 +342,15 @@ export function DiffViewBody({
   hideLineNumbers?: boolean;
   theme: 'light' | 'dark';
   wrapText?: boolean;
+  modeOverride?: 'split' | 'unified';
 }) {
   const { t } = useTranslation('tasks');
   const globalMode = useDiffViewMode();
+  const mode = modeOverride ?? globalMode;
 
   const options = useMemo(
     () => ({
-      diffStyle:
-        globalMode === 'split' ? ('split' as const) : ('unified' as const),
+      diffStyle: mode === 'split' ? ('split' as const) : ('unified' as const),
       diffIndicators: 'classic' as const,
       themeType: theme,
       overflow: wrapText ? ('wrap' as const) : ('scroll' as const),
@@ -358,7 +360,7 @@ export function DiffViewBody({
       theme: { dark: 'github-dark', light: 'github-light' } as const,
       unsafeCSS: PIERRE_DIFFS_THEME_CSS,
     }),
-    [globalMode, theme, wrapText, hideLineNumbers]
+    [mode, theme, wrapText, hideLineNumbers]
   );
 
   if (!isValid) {

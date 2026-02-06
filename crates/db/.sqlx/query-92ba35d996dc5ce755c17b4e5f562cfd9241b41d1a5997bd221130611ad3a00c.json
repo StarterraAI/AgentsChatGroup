@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO chat_sessions (id, title, status)\n               VALUES ($1, $2, $3)\n               RETURNING id as \"id!: Uuid\",\n                         title,\n                         status as \"status!: ChatSessionStatus\",\n                         summary_text,\n                         archive_ref,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\",\n                         archived_at as \"archived_at: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!: ChatSessionStatus",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "summary_text",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archive_ref",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived_at: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "92ba35d996dc5ce755c17b4e5f562cfd9241b41d1a5997bd221130611ad3a00c"
+}

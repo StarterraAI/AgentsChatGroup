@@ -183,11 +183,17 @@ export function GeneralSettings() {
 
   const resetDisclaimer = async () => {
     if (!config) return;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('vk_disclaimer_ack');
+    }
     updateAndSaveConfig({ disclaimer_acknowledged: false });
   };
 
   const resetOnboarding = async () => {
     if (!config) return;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('vk_onboarding_ack');
+    }
     updateAndSaveConfig({ onboarding_acknowledged: false });
   };
 

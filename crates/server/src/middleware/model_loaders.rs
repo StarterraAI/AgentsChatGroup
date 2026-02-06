@@ -5,8 +5,8 @@ use axum::{
     response::Response,
 };
 use db::models::{
-    execution_process::ExecutionProcess, project::Project, session::Session, tag::Tag, task::Task,
-    workspace::Workspace,
+    chat_agent::ChatAgent, chat_session::ChatSession, execution_process::ExecutionProcess,
+    project::Project, session::Session, tag::Tag, task::Task, workspace::Workspace,
 };
 use deployment::Deployment;
 use uuid::Uuid;
@@ -167,5 +167,49 @@ pub async fn load_session_middleware(
     };
 
     request.extensions_mut().insert(session);
+    Ok(next.run(request).await)
+}
+
+pub async fn load_chat_session_middleware(
+    State(deployment): State<DeploymentImpl>,
+    Path(session_id): Path<Uuid>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let session = match ChatSession::find_by_id(&deployment.db().pool, session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            tracing::warn!("ChatSession {} not found", session_id);
+            return Err(StatusCode::NOT_FOUND);
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch chat session {}: {}", session_id, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    request.extensions_mut().insert(session);
+    Ok(next.run(request).await)
+}
+
+pub async fn load_chat_agent_middleware(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_id): Path<Uuid>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let agent = match ChatAgent::find_by_id(&deployment.db().pool, agent_id).await {
+        Ok(Some(agent)) => agent,
+        Ok(None) => {
+            tracing::warn!("ChatAgent {} not found", agent_id);
+            return Err(StatusCode::NOT_FOUND);
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch chat agent {}: {}", agent_id, e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    request.extensions_mut().insert(agent);
     Ok(next.run(request).await)
 }

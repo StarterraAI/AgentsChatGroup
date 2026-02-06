@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\",\n                          title,\n                          status as \"status!: ChatSessionStatus\",\n                          summary_text,\n                          archive_ref,\n                          created_at as \"created_at!: DateTime<Utc>\",\n                          updated_at as \"updated_at!: DateTime<Utc>\",\n                          archived_at as \"archived_at: DateTime<Utc>\"\n                   FROM chat_sessions\n                   ORDER BY updated_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "status!: ChatSessionStatus",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "summary_text",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "archive_ref",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived_at: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "15c393a20b5ba44838ea19b957d0a84ab66b97d844f9f3c0a9cea7ce2fb78d3c"
+}

@@ -7,6 +7,7 @@ use tower_http::validate_request::ValidateRequestHeaderLayer;
 use crate::{DeploymentImpl, middleware};
 
 pub mod approvals;
+pub mod chat;
 pub mod config;
 pub mod containers;
 pub mod filesystem;
@@ -34,6 +35,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
     let base_routes = Router::new()
         .route("/health", get(health::health_check))
         .merge(config::router())
+        .merge(chat::router(&deployment))
         .merge(containers::router(&deployment))
         .merge(projects::router(&deployment))
         .merge(tasks::router(&deployment))

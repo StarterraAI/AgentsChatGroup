@@ -482,6 +482,17 @@ export const Actions = {
   },
 
   // === Global/Navigation Actions ===
+  OpenChat: {
+    id: 'open-chat',
+    label: 'Group Chat',
+    icon: ChatsTeardropIcon,
+    shortcut: 'G C',
+    requiresTarget: ActionTargetType.NONE,
+    execute: (ctx) => {
+      ctx.navigate('/chat');
+    },
+  },
+
   NewWorkspace: {
     id: 'new-workspace',
     label: 'New Workspace',
@@ -786,7 +797,7 @@ export const Actions = {
     label: 'Open in Old UI',
     icon: SignOutIcon,
     requiresTarget: ActionTargetType.NONE,
-    isVisible: (ctx) => ctx.layoutMode === 'workspaces',
+    isVisible: (ctx) => ctx.layoutMode === 'workspaces' && ctx.hasWorkspace,
     execute: async (ctx) => {
       // If no workspace is selected, navigate to root
       if (!ctx.currentWorkspaceId) {
@@ -1467,7 +1478,12 @@ export type NavbarItem = ActionDefinition | typeof NavbarDivider;
 
 // Navbar action groups define which actions appear in each section
 export const NavbarActionGroups = {
-  left: [Actions.ArchiveWorkspace, Actions.OpenInOldUI] as NavbarItem[],
+  left: [
+    Actions.OpenChat,
+    NavbarDivider,
+    Actions.ArchiveWorkspace,
+    Actions.OpenInOldUI,
+  ] as NavbarItem[],
   right: [
     Actions.ToggleDiffViewMode,
     Actions.ToggleAllDiffs,

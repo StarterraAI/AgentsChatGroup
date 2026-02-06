@@ -9,6 +9,7 @@ use services::services::{
     analytics::{AnalyticsConfig, AnalyticsContext, AnalyticsService, generate_user_id},
     approvals::Approvals,
     auth::AuthContext,
+    chat_runner::ChatRunner,
     config::{Config, load_config_from_file, save_config_to_file},
     container::ContainerService,
     events::EventService,
@@ -52,6 +53,7 @@ pub struct LocalDeployment {
     events: EventService,
     file_search_cache: Arc<FileSearchCache>,
     approvals: Approvals,
+    chat_runner: ChatRunner,
     queued_message_service: QueuedMessageService,
     remote_client: Result<RemoteClient, RemoteClientNotConfigured>,
     auth_context: AuthContext,
@@ -133,6 +135,7 @@ impl Deployment for LocalDeployment {
 
         let approvals = Approvals::new(msg_stores.clone());
         let queued_message_service = QueuedMessageService::new();
+        let chat_runner = ChatRunner::new(db.clone());
 
         let oauth_credentials = Arc::new(OAuthCredentials::new(credentials_path()));
         if let Err(e) = oauth_credentials.load().await {
@@ -214,6 +217,7 @@ impl Deployment for LocalDeployment {
             events,
             file_search_cache,
             approvals,
+            chat_runner,
             queued_message_service,
             remote_client,
             auth_context,
@@ -274,6 +278,10 @@ impl Deployment for LocalDeployment {
 
     fn approvals(&self) -> &Approvals {
         &self.approvals
+    }
+
+    fn chat_runner(&self) -> &ChatRunner {
+        &self.chat_runner
     }
 
     fn queued_message_service(&self) -> &QueuedMessageService {

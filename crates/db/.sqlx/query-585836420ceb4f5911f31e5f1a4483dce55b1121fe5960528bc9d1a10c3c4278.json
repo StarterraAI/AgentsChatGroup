@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE chat_session_agents\n               SET workspace_path = $2,\n                   updated_at = datetime('now', 'subsec')\n               WHERE id = $1\n               RETURNING id as \"id!: Uuid\",\n                         session_id as \"session_id!: Uuid\",\n                         agent_id as \"agent_id!: Uuid\",\n                         state as \"state!: ChatSessionAgentState\",\n                         workspace_path,\n                         pty_session_key,\n                         agent_session_id,\n                         agent_message_id,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "agent_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "state!: ChatSessionAgentState",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "workspace_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "pty_session_key",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "agent_session_id",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "agent_message_id",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "585836420ceb4f5911f31e5f1a4483dce55b1121fe5960528bc9d1a10c3c4278"
+}

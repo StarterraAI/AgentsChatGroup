@@ -1,3 +1,10 @@
+pub mod chat_agent;
+pub mod chat_artifact;
+pub mod chat_message;
+pub mod chat_permission;
+pub mod chat_run;
+pub mod chat_session;
+pub mod chat_session_agent;
 pub mod coding_agent_turn;
 pub mod execution_process;
 pub mod execution_process_logs;

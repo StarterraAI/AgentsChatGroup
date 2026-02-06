@@ -67,6 +67,7 @@ export function NavbarContainer() {
   const { workspaces } = useUserContext();
   const location = useLocation();
   const isOnProjectPage = location.pathname.startsWith('/projects/');
+  const isOnChatPage = location.pathname.startsWith('/chat');
 
   // Find remote workspace linked to current local workspace
   const linkedRemoteWorkspace = useMemo(() => {
@@ -118,6 +119,8 @@ export function NavbarContainer() {
 
   const navbarTitle = isCreateMode
     ? 'Create Workspace'
+    : isOnChatPage
+      ? 'Group Chat'
     : isMigratePage
       ? 'Migrate'
       : isOnProjectPage

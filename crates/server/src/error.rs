@@ -15,6 +15,7 @@ use git::GitServiceError;
 use git2::Error as Git2Error;
 use local_deployment::pty::PtyError;
 use services::services::{
+    chat::ChatServiceError,
     config::{ConfigError, EditorOpenError},
     container::ContainerError,
     git_host::GitHostError,
@@ -59,6 +60,8 @@ pub enum ApiError {
     Worktree(#[from] WorktreeError),
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error(transparent)]
+    Chat(#[from] ChatServiceError),
     #[error(transparent)]
     Image(#[from] ImageError),
     #[error("Multipart error: {0}")]
@@ -380,6 +383,19 @@ impl IntoResponse for ApiError {
             ApiError::Database(_) => ErrorInfo::internal("DatabaseError"),
             ApiError::Worktree(_) => ErrorInfo::internal("WorktreeError"),
             ApiError::Config(_) => ErrorInfo::internal("ConfigError"),
+            ApiError::Chat(ChatServiceError::Database(_)) => {
+                ErrorInfo::internal("ChatServiceError")
+            }
+            ApiError::Chat(ChatServiceError::SessionNotFound) => {
+                ErrorInfo::not_found("ChatServiceError", "Chat session not found.")
+            }
+            ApiError::Chat(ChatServiceError::SessionArchived) => ErrorInfo::conflict(
+                "ChatServiceError",
+                "Chat session is archived.",
+            ),
+            ApiError::Chat(ChatServiceError::Validation(msg)) => {
+                ErrorInfo::bad_request("ChatServiceError", msg.clone())
+            }
             ApiError::Io(_) => ErrorInfo::internal("IoError"),
             ApiError::Migration(MigrationError::Database(_)) => {
                 ErrorInfo::internal("MigrationError")

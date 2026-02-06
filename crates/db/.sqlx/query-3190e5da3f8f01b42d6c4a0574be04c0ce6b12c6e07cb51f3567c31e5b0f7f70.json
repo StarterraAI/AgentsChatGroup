@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(run_index), 0) as \"max_index!: i64\"\n               FROM chat_runs\n               WHERE session_agent_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "max_index!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3190e5da3f8f01b42d6c4a0574be04c0ce6b12c6e07cb51f3567c31e5b0f7f70"
+}

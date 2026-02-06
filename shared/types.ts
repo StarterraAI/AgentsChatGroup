@@ -112,6 +112,38 @@ export type CreateScratch = { payload: ScratchPayload, };
 
 export type UpdateScratch = { payload: ScratchPayload, };
 
+export type ChatSession = { id: string, title: string | null, status: ChatSessionStatus, summary_text: string | null, archive_ref: string | null, created_at: string, updated_at: string, archived_at: string | null, };
+
+export enum ChatSessionStatus { active = "active", archived = "archived" }
+
+export type CreateChatSession = { title: string | null, };
+
+export type UpdateChatSession = { title: string | null, status: ChatSessionStatus | null, summary_text: string | null, archive_ref: string | null, };
+
+export type ChatAgent = { id: string, name: string, runner_type: string, system_prompt: string, tools_enabled: JsonValue, created_at: string, updated_at: string, };
+
+export type CreateChatAgent = { name: string, runner_type: string, system_prompt: string | null, tools_enabled: JsonValue | null, };
+
+export type UpdateChatAgent = { name: string | null, runner_type: string | null, system_prompt: string | null, tools_enabled: JsonValue | null, };
+
+export type ChatMessage = { id: string, session_id: string, sender_type: ChatSenderType, sender_id: string | null, content: string, mentions: string[], meta: JsonValue, created_at: string, };
+
+export enum ChatSenderType { user = "user", agent = "agent", system = "system" }
+
+export type ChatSessionAgent = { id: string, session_id: string, agent_id: string, state: ChatSessionAgentState, workspace_path: string | null, pty_session_key: string | null, agent_session_id: string | null, agent_message_id: string | null, created_at: string, updated_at: string, };
+
+export enum ChatSessionAgentState { idle = "idle", running = "running", waitingapproval = "waitingapproval", dead = "dead" }
+
+export type ChatPermission = { id: string, session_id: string, session_agent_id: string, capability: string, scope: JsonValue, ttl_type: ChatPermissionTtlType, expires_at: string | null, granted_by: string | null, created_at: string, };
+
+export enum ChatPermissionTtlType { once = "once", time = "time", session = "session" }
+
+export type ChatArtifact = { id: string, session_id: string, name: string, path: string, type: string, created_by: string | null, pinned: boolean, created_at: string, };
+
+export type ChatRun = { id: string, session_id: string, session_agent_id: string, run_index: bigint, run_dir: string, input_path: string | null, output_path: string | null, raw_log_path: string | null, meta_path: string | null, created_at: string, };
+
+export type ChatStreamEvent = { "type": "message_new", message: ChatMessage, } | { "type": "agent_delta", session_id: string, session_agent_id: string, agent_id: string, run_id: string, content: string, delta: boolean, is_final: boolean, } | { "type": "agent_state", session_agent_id: string, agent_id: string, state: ChatSessionAgentState, };
+
 export type Image = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
 
 export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
@@ -261,6 +293,16 @@ export type CheckAgentAvailabilityQuery = { executor: BaseCodingAgent, };
 export type CurrentUserResponse = { user_id: string, };
 
 export type CreateFollowUpAttempt = { prompt: string, executor_profile_id: ExecutorProfileId, retry_process_id: string | null, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
+
+export type ChatSessionListQuery = { status: ChatSessionStatus | null, };
+
+export type CreateChatSessionAgentRequest = { agent_id: string, workspace_path: string | null, };
+
+export type UpdateChatSessionAgentRequest = { workspace_path: string | null, };
+
+export type ChatMessageListQuery = { limit: bigint | null, };
+
+export type CreateChatMessageRequest = { sender_type: ChatSenderType, sender_id: string | null, content: string, meta: JsonValue | null, };
 
 export type ChangeTargetBranchRequest = { repo_id: string, new_target_branch: string, };
 

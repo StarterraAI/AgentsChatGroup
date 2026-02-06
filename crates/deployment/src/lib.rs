@@ -20,6 +20,7 @@ use services::services::{
     analytics::AnalyticsService,
     approvals::Approvals,
     auth::AuthContext,
+    chat_runner::ChatRunner,
     config::{Config, ConfigError},
     container::{ContainerError, ContainerService},
     events::{EventError, EventService},
@@ -105,6 +106,8 @@ pub trait Deployment: Clone + Send + Sync + 'static {
     fn file_search_cache(&self) -> &Arc<FileSearchCache>;
 
     fn approvals(&self) -> &Approvals;
+
+    fn chat_runner(&self) -> &ChatRunner;
 
     fn queued_message_service(&self) -> &QueuedMessageService;
 

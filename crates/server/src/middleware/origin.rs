@@ -57,10 +57,14 @@ pub fn validate_origin<B>(req: &mut Request<B>) -> Result<(), Response> {
         return Err(forbidden());
     };
 
-    if allowed_origins()
-        .iter()
-        .any(|allowed| allowed == &origin_key)
-    {
+    let allowed = allowed_origins();
+
+    if allowed.iter().any(|allowed| allowed == &origin_key) {
+        return Ok(());
+    }
+
+    // Dev fallback: if no VK_ALLOWED_ORIGINS provided, allow loopback origins
+    if cfg!(debug_assertions) && allowed.is_empty() && is_loopback_origin(&origin_key) {
         return Ok(());
     }
 
@@ -120,6 +124,10 @@ fn normalize_host(host: &str) -> String {
 
 fn default_port(https: bool) -> u16 {
     if https { 443 } else { 80 }
+}
+
+fn is_loopback_origin(origin: &OriginKey) -> bool {
+    origin.host == "localhost"
 }
 
 fn allowed_origins() -> &'static Vec<OriginKey> {

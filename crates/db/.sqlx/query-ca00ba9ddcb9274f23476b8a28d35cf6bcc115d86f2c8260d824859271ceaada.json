@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO chat_runs\n               (id, session_id, session_agent_id, run_index, run_dir, input_path, output_path, raw_log_path, meta_path)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n               RETURNING id as \"id!: Uuid\",\n                         session_id as \"session_id!: Uuid\",\n                         session_agent_id as \"session_agent_id!: Uuid\",\n                         run_index,\n                         run_dir,\n                         input_path,\n                         output_path,\n                         raw_log_path,\n                         meta_path,\n                         created_at as \"created_at!: DateTime<Utc>\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_agent_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "run_index",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "run_dir",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "input_path",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "output_path",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "raw_log_path",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "meta_path",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "ca00ba9ddcb9274f23476b8a28d35cf6bcc115d86f2c8260d824859271ceaada"
+}

@@ -1,6 +1,8 @@
 pub mod analytics;
 pub mod approvals;
 pub mod auth;
+pub mod chat;
+pub mod chat_runner;
 pub mod config;
 pub mod container;
 pub mod diff_stream;

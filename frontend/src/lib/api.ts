@@ -38,6 +38,7 @@ import {
   GetMcpServerResponse,
   ImageResponse,
   GitOperationError,
+  JsonValue,
   ApprovalResponse,
   RebaseTaskAttemptRequest,
   ChangeTargetBranchRequest,
@@ -94,6 +95,19 @@ import {
   CreateFromPrError,
   MigrationRequest,
   MigrationResponse,
+  ChatSession,
+  ChatMessage,
+  ChatAgent,
+  ChatStreamEvent,
+  ChatSenderType,
+  CreateChatAgent,
+  CreateChatSession,
+  UpdateChatSession,
+  CreateChatMessageRequest,
+  ChatSessionAgent,
+  CreateChatSessionAgentRequest,
+  UpdateChatSessionAgentRequest,
+  UpdateChatAgent,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1408,6 +1422,200 @@ export const migrationApi = {
     });
     return handleApiResponse<MigrationResponse>(response);
   },
+};
+
+// Chat APIs
+export const chatApi = {
+  listSessions: async (status?: string): Promise<ChatSession[]> => {
+    const queryParam = status ? `?status=${encodeURIComponent(status)}` : '';
+    const response = await makeRequest(`/api/chat/sessions${queryParam}`);
+    return handleApiResponse<ChatSession[]>(response);
+  },
+
+  getSession: async (sessionId: string): Promise<ChatSession> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}`);
+    return handleApiResponse<ChatSession>(response);
+  },
+
+  createSession: async (data: CreateChatSession): Promise<ChatSession> => {
+    const response = await makeRequest('/api/chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<ChatSession>(response);
+  },
+
+  updateSession: async (
+    sessionId: string,
+    data: UpdateChatSession
+  ): Promise<ChatSession> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<ChatSession>(response);
+  },
+
+  deleteSession: async (sessionId: string): Promise<void> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}`, {
+      method: 'DELETE',
+    });
+    return handleApiResponse<void>(response);
+  },
+
+  listMessages: async (
+    sessionId: string,
+    limit?: number
+  ): Promise<ChatMessage[]> => {
+    const queryParam = limit ? `?limit=${limit}` : '';
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/messages${queryParam}`
+    );
+    return handleApiResponse<ChatMessage[]>(response);
+  },
+
+  createMessage: async (
+    sessionId: string,
+    data: CreateChatMessageRequest
+  ): Promise<ChatMessage> => {
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/messages`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<ChatMessage>(response);
+  },
+
+  listAgents: async (): Promise<ChatAgent[]> => {
+    const response = await makeRequest('/api/chat/agents');
+    return handleApiResponse<ChatAgent[]>(response);
+  },
+
+  createAgent: async (data: CreateChatAgent): Promise<ChatAgent> => {
+    const response = await makeRequest('/api/chat/agents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<ChatAgent>(response);
+  },
+
+  updateAgent: async (
+    agentId: string,
+    data: UpdateChatAgent
+  ): Promise<ChatAgent> => {
+    const response = await makeRequest(`/api/chat/agents/${agentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<ChatAgent>(response);
+  },
+
+  listSessionAgents: async (
+    sessionId: string
+  ): Promise<ChatSessionAgent[]> => {
+    const response = await makeRequest(`/api/chat/sessions/${sessionId}/agents`);
+    return handleApiResponse<ChatSessionAgent[]>(response);
+  },
+
+  createSessionAgent: async (
+    sessionId: string,
+    data: CreateChatSessionAgentRequest
+  ): Promise<ChatSessionAgent> => {
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/agents`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<ChatSessionAgent>(response);
+  },
+
+  updateSessionAgent: async (
+    sessionId: string,
+    sessionAgentId: string,
+    data: UpdateChatSessionAgentRequest
+  ): Promise<ChatSessionAgent> => {
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/agents/${sessionAgentId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return handleApiResponse<ChatSessionAgent>(response);
+  },
+
+  deleteSessionAgent: async (
+    sessionId: string,
+    sessionAgentId: string
+  ): Promise<void> => {
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/agents/${sessionAgentId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return handleApiResponse<void>(response);
+  },
+
+  getStreamUrl: (sessionId: string): string =>
+    `/api/chat/sessions/${sessionId}/stream`,
+
+  getRunDiffUrl: (runId: string): string => `/api/chat/runs/${runId}/diff`,
+
+  getRunDiff: async (runId: string): Promise<string> => {
+    const response = await makeRequest(`/api/chat/runs/${runId}/diff`);
+    if (!response.ok) {
+      throw new ApiError(
+        response.statusText || 'Failed to fetch run diff',
+        response.status,
+        response
+      );
+    }
+    return response.text();
+  },
+
+  getRunUntrackedFile: async (
+    runId: string,
+    path: string
+  ): Promise<string> => {
+    const response = await makeRequest(
+      `/api/chat/runs/${runId}/untracked?path=${encodeURIComponent(path)}`
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        response.statusText || 'Failed to fetch untracked file',
+        response.status,
+        response
+      );
+    }
+    return response.text();
+  },
+
+  getRunLog: async (runId: string): Promise<string> => {
+    const response = await makeRequest(`/api/chat/runs/${runId}/log`);
+    if (!response.ok) {
+      throw new ApiError(
+        response.statusText || 'Failed to fetch run log',
+        response.status,
+        response
+      );
+    }
+    return response.text();
+  },
+
+  buildCreateMessageRequest: (
+    content: string,
+    meta?: JsonValue | null
+  ): CreateChatMessageRequest => ({
+    sender_type: ChatSenderType.user,
+    sender_id: null,
+    content,
+    meta: meta ?? null,
+  }),
 };
 
 // Search API (multi-repo file search)
