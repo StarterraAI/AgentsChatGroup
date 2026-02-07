@@ -1,0 +1,51 @@
+{
+  "build": {
+    "beforeDevCommand": "pnpm -C ../frontend build && node ../scripts/desktop/prepare-sidecar.js --debug",
+    "beforeBuildCommand": "pnpm -C ../frontend build && node ../scripts/desktop/prepare-sidecar.js --release",
+    "devPath": "../frontend/dist",
+    "frontendDist": "../frontend/dist"
+  },
+  "package": {
+    "productName": "agent-chatgroup",
+    "version": "0.1.4"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false
+    },
+    "bundle": {
+      "active": true,
+      "targets": ["msi", "dmg", "appimage", "deb"],
+      "identifier": "com.agent-chatgroup.desktop",
+      "icon": [
+        "icons/icon.png",
+        "icons/icon.ico",
+        "icons/icon.icns"
+      ],
+      "externalBin": [
+        "bin/server"
+      ]
+    },
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "endpoints": [
+        "https://updates.agent-chatgroup.com/{{target}}/{{current_version}}"
+      ],
+      "pubkey": ""
+    },
+    "windows": [
+      {
+        "title": "agent-chatgroup",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

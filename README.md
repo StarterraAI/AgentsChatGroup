@@ -95,6 +95,20 @@ pnpm build
 1. Run `./local-build.sh`
 2. Test with `cd npx-cli && node bin/cli.js`
 
+### Desktop (Tauri)
+
+This repo can be packaged as a cross-platform desktop app (Windows/macOS/Linux) with installers and auto-updates.
+
+Build installers:
+```bash
+pnpm i
+pnpm desktop:build
+```
+
+Notes:
+- Update endpoints + public key are configured in `src-tauri/tauri.conf.json`. You must supply your updater public key and host update manifests for auto-updates to work.
+- The desktop app bundles the backend as a sidecar and serves the frontend from the backend.
+
 
 ### Environment Variables
 

@@ -56,6 +56,27 @@ if (
   );
 }
 
+const isTauriApp = typeof window !== 'undefined' && '__TAURI__' in window;
+
+if (isTauriApp) {
+  import('@tauri-apps/api/updater')
+    .then(async ({ checkUpdate, installUpdate }) => {
+      try {
+        const { shouldUpdate } = await checkUpdate();
+        if (shouldUpdate) {
+          await installUpdate();
+          const { relaunch } = await import('@tauri-apps/api/process');
+          await relaunch();
+        }
+      } catch (err) {
+        console.warn('Updater check failed:', err);
+      }
+    })
+    .catch((err) => {
+      console.warn('Updater API unavailable:', err);
+    });
+}
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {

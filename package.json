@@ -34,9 +34,13 @@
     "remote:dev": "cd crates/remote && docker compose --env-file .env.remote up --build ; docker compose down -v",
     "remote:dev:clean": "cd crates/remote && docker compose --env-file .env.remote down -v",
     "remote:prepare-db": "cd crates/remote && bash scripts/prepare-db.sh",
-    "remote:prepare-db:check": "cd crates/remote && bash scripts/prepare-db.sh --check"
+    "remote:prepare-db:check": "cd crates/remote && bash scripts/prepare-db.sh --check",
+    "desktop:dev": "pnpm tauri dev",
+    "desktop:build": "pnpm tauri build",
+    "desktop:prepare-sidecar": "node scripts/desktop/prepare-sidecar.js --release"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^1.5.0",
     "concurrently": "^8.2.2",
     "vite": "^6.3.5"
   },

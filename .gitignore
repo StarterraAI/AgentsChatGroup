@@ -1,6 +1,8 @@
 ﻿# Rust
 target/
 **/*.rs.bk
+src-tauri/target/
+src-tauri/bin/
 
 # Node.js
 node_modules/
