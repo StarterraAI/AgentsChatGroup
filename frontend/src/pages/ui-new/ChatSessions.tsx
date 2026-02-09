@@ -1152,7 +1152,7 @@ export function ChatSessions() {
             {titleError && <div className="text-xs text-error">{titleError}</div>}
             {activeSession && (
               <div className="text-xs text-low">
-                Created {formatDateShortWithTime(activeSession.created_at)}
+                Created {formatDateShortWithTime(activeSession.created_at)} / Total messages: {messageList.length}
               </div>
             )}
           </div>
@@ -1169,7 +1169,7 @@ export function ChatSessions() {
                   </Badge>
                 )}
                 <PrimaryButton
-                  variant="secondary"
+                  variant="tertiary"
                   value={isArchived ? 'Restore' : 'Archive'}
                   onClick={() => {
                     if (!activeSessionId) return;
@@ -1183,7 +1183,7 @@ export function ChatSessions() {
                 />
                 {!isArchived && (
                   <PrimaryButton
-                    variant={isCleanupMode ? 'default' : 'tertiary'}
+                    variant={isCleanupMode ? 'default' : 'secondary'}
                     value={isCleanupMode ? 'Exit Cleanup' : 'Cleanup'}
                     onClick={() => {
                       if (isCleanupMode) {
@@ -1201,52 +1201,47 @@ export function ChatSessions() {
           </div>
         </header>
 
-        {/* Message count display */}
-        {activeSession && (
-          <div className="px-base py-half border-b border-border text-xs text-low flex items-center justify-between">
-            <span>Total messages: {messageList.length}</span>
-            {isCleanupMode && (
-              <div className="flex items-center gap-base">
-                <span>Selected: {selectedMessageIds.size}</span>
-                <button
-                  type="button"
-                  className="text-brand hover:text-brand-hover"
-                  onClick={() => {
-                    if (selectedMessageIds.size === messageList.length) {
-                      setSelectedMessageIds(new Set());
-                    } else {
-                      setSelectedMessageIds(new Set(messageList.map((m) => m.id)));
-                    }
-                  }}
-                >
-                  {selectedMessageIds.size === messageList.length ? 'Deselect All' : 'Select All'}
-                </button>
-                {selectedMessageIds.size > 0 && (
-                  <button
-                    type="button"
-                    className="text-error hover:text-error/80 flex items-center gap-half"
-                    onClick={async () => {
-                      if (!activeSessionId) return;
-                      if (!window.confirm(`Are you sure you want to delete ${selectedMessageIds.size} message(s)?`)) return;
-                      setIsDeletingMessages(true);
-                      try {
-                        await deleteMessages.mutateAsync({
-                          sessionId: activeSessionId,
-                          messageIds: Array.from(selectedMessageIds),
-                        });
-                        setSelectedMessageIds(new Set());
-                        setIsCleanupMode(false);
-                      } finally {
-                        setIsDeletingMessages(false);
-                      }
-                    }}
-                    disabled={isDeletingMessages}
-                  >
-                    <TrashIcon className="size-icon-xs" />
-                    Delete Selected
-                  </button>
-                )}
-              </div>
+        {/* Cleanup mode controls */}
+        {activeSession && isCleanupMode && (
+          <div className="px-base py-half border-b border-border text-xs text-low flex items-center justify-end gap-base">
+            <span>Selected: {selectedMessageIds.size}</span>
+            <button
+              type="button"
+              className="text-brand hover:text-brand-hover"
+              onClick={() => {
+                if (selectedMessageIds.size === messageList.length) {
+                  setSelectedMessageIds(new Set());
+                } else {
+                  setSelectedMessageIds(new Set(messageList.map((m) => m.id)));
+                }
+              }}
+            >
+              {selectedMessageIds.size === messageList.length ? 'Deselect All' : 'Select All'}
+            </button>
+            {selectedMessageIds.size > 0 && (
+              <button
+                type="button"
+                className="text-error hover:text-error/80 flex items-center gap-half"
+                onClick={async () => {
+                  if (!activeSessionId) return;
+                  if (!window.confirm(`Are you sure you want to delete ${selectedMessageIds.size} message(s)?`)) return;
+                  setIsDeletingMessages(true);
+                  try {
+                    await deleteMessages.mutateAsync({
+                      sessionId: activeSessionId,
+                      messageIds: Array.from(selectedMessageIds),
+                    });
+                    setSelectedMessageIds(new Set());
+                    setIsCleanupMode(false);
+                  } finally {
+                    setIsDeletingMessages(false);
+                  }
+                }}
+                disabled={isDeletingMessages}
+              >
+                <TrashIcon className="size-icon-xs" />
+                Delete Selected
+              </button>
             )}
           </div>
         )}
