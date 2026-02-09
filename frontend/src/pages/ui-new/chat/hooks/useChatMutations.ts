@@ -9,6 +9,7 @@ export interface UseChatMutationsResult {
   >;
   archiveSession: ReturnType<typeof useMutation<ChatSession, Error, string>>;
   restoreSession: ReturnType<typeof useMutation<ChatSession, Error, string>>;
+  deleteSession: ReturnType<typeof useMutation<void, Error, string>>;
   sendMessage: ReturnType<
     typeof useMutation<
       ChatMessage,
@@ -25,15 +26,23 @@ export function useChatMutations(
   onSessionCreated?: (session: ChatSession) => void,
   onSessionUpdated?: (session: ChatSession) => void,
   onMessageSent?: (message: ChatMessage) => void,
-  onMessagesDeleted?: (count: number) => void
+  onMessagesDeleted?: (count: number) => void,
+  onSessionDeleted?: () => void
 ): UseChatMutationsResult {
   const queryClient = useQueryClient();
 
   const createSession = useMutation({
     mutationFn: () => chatApi.createSession({ title: null }),
     onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+      // Add new session to cache immediately to prevent race condition
+      // where useEffect navigates back before invalidateQueries completes
+      queryClient.setQueryData<ChatSession[]>(['chatSessions'], (old) =>
+        old ? [session, ...old] : [session]
+      );
+      // Navigate to the new session
       onSessionCreated?.(session);
+      // Then refresh the full list in background
+      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
     },
   });
 
@@ -64,6 +73,14 @@ export function useChatMutations(
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
       onSessionUpdated?.(session);
+    },
+  });
+
+  const deleteSession = useMutation({
+    mutationFn: (id: string) => chatApi.deleteSession(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+      onSessionDeleted?.();
     },
   });
 
@@ -98,6 +115,7 @@ export function useChatMutations(
     updateSession,
     archiveSession,
     restoreSession,
+    deleteSession,
     sendMessage,
     deleteMessages,
   };
