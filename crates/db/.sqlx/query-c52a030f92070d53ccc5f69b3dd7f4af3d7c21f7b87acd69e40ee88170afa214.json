@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE chat_session_agents\n               SET agent_session_id = NULL,\n                   agent_message_id = NULL,\n                   updated_at = datetime('now', 'subsec')\n               WHERE agent_id = $1\n                 AND (agent_session_id IS NOT NULL OR agent_message_id IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c52a030f92070d53ccc5f69b3dd7f4af3d7c21f7b87acd69e40ee88170afa214"
+}

@@ -258,4 +258,25 @@ impl ChatSessionAgent {
         .await?;
         Ok(result.rows_affected())
     }
+
+    /// Clear agent_session_id and agent_message_id for all session agents using a specific agent.
+    /// This should be called when the agent's runner_type changes, as the old session IDs
+    /// are no longer valid for the new model.
+    pub async fn clear_session_ids_for_agent(
+        pool: &SqlitePool,
+        agent_id: Uuid,
+    ) -> Result<u64, sqlx::Error> {
+        let result = sqlx::query!(
+            r#"UPDATE chat_session_agents
+               SET agent_session_id = NULL,
+                   agent_message_id = NULL,
+                   updated_at = datetime('now', 'subsec')
+               WHERE agent_id = $1
+                 AND (agent_session_id IS NOT NULL OR agent_message_id IS NOT NULL)"#,
+            agent_id
+        )
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }

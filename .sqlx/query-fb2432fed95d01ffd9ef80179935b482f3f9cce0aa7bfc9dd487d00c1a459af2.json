@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\",\n                          session_id as \"session_id!: Uuid\",\n                          sender_type as \"sender_type!: ChatSenderType\",\n                          sender_id as \"sender_id: Uuid\",\n                          content,\n                          mentions as \"mentions!: sqlx::types::Json<Vec<String>>\",\n                          meta as \"meta!: sqlx::types::Json<serde_json::Value>\",\n                          created_at as \"created_at!: DateTime<Utc>\"\n                   FROM chat_messages\n                   WHERE session_id = $1\n                   ORDER BY created_at ASC\n                   LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "sender_type!: ChatSenderType",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "sender_id: Uuid",
+        "ordinal": 3,
+        "type_info": "Blob"
+      },
+      {
+        "name": "content",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "mentions!: sqlx::types::Json<Vec<String>>",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "meta!: sqlx::types::Json<serde_json::Value>",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fb2432fed95d01ffd9ef80179935b482f3f9cce0aa7bfc9dd487d00c1a459af2"
+}

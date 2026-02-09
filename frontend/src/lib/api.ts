@@ -1653,6 +1653,19 @@ export const chatApi = {
     return response.text();
   },
 
+  stopSessionAgent: async (
+    sessionId: string,
+    sessionAgentId: string
+  ): Promise<void> => {
+    const response = await makeRequest(
+      `/api/chat/sessions/${sessionId}/agents/${sessionAgentId}/stop`,
+      {
+        method: 'POST',
+      }
+    );
+    return handleApiResponse<void>(response);
+  },
+
   buildCreateMessageRequest: (
     content: string,
     meta?: JsonValue | null

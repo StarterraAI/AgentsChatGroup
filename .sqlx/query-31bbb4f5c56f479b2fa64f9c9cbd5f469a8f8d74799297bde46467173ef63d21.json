@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\",\n                      session_id as \"session_id!: Uuid\",\n                      agent_id as \"agent_id!: Uuid\",\n                      state as \"state!: ChatSessionAgentState\",\n                      workspace_path,\n                      pty_session_key,\n                      agent_session_id,\n                      agent_message_id,\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM chat_session_agents\n               WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "agent_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "state!: ChatSessionAgentState",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "workspace_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "pty_session_key",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "agent_session_id",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "agent_message_id",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "31bbb4f5c56f479b2fa64f9c9cbd5f469a8f8d74799297bde46467173ef63d21"
+}

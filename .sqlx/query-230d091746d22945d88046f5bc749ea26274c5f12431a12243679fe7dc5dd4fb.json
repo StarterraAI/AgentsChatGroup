@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\",\n                      name,\n                      runner_type,\n                      system_prompt,\n                      tools_enabled as \"tools_enabled!: sqlx::types::Json<serde_json::Value>\",\n                      created_at as \"created_at!: DateTime<Utc>\",\n                      updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM chat_agents\n               ORDER BY name ASC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "runner_type",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "system_prompt",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "tools_enabled!: sqlx::types::Json<serde_json::Value>",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "230d091746d22945d88046f5bc749ea26274c5f12431a12243679fe7dc5dd4fb"
+}

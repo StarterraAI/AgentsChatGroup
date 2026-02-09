@@ -33,6 +33,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
                 .delete(sessions::delete_session_agent),
         )
         .route(
+            "/agents/{session_agent_id}/stop",
+            axum::routing::post(sessions::stop_session_agent),
+        )
+        .route(
             "/messages",
             get(messages::get_messages).post(messages::create_message),
         )

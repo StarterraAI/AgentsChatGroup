@@ -77,6 +77,15 @@ struct ReferenceContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MentionStatus {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ChatStreamEvent {
@@ -94,6 +103,14 @@ pub enum ChatStreamEvent {
         session_agent_id: Uuid,
         agent_id: Uuid,
         state: ChatSessionAgentState,
+        started_at: Option<chrono::DateTime<Utc>>,
+    },
+    MentionAcknowledged {
+        session_id: Uuid,
+        message_id: Uuid,
+        mentioned_agent: String,
+        agent_id: Uuid,
+        status: MentionStatus,
     },
 }
 
@@ -117,6 +134,8 @@ pub enum ChatRunnerError {
 pub struct ChatRunner {
     db: DBService,
     streams: Arc<DashMap<Uuid, broadcast::Sender<ChatStreamEvent>>>,
+    // Store running processes, key = session_agent_id
+    running_processes: Arc<DashMap<Uuid, Arc<Mutex<Option<command_group::AsyncGroupChild>>>>>,
 }
 
 impl ChatRunner {
@@ -124,6 +143,7 @@ impl ChatRunner {
         Self {
             db,
             streams: Arc::new(DashMap::new()),
+            running_processes: Arc::new(DashMap::new()),
         }
     }
 
@@ -133,6 +153,46 @@ impl ChatRunner {
 
     pub fn emit_message_new(&self, session_id: Uuid, message: ChatMessage) {
         self.emit(session_id, ChatStreamEvent::MessageNew { message });
+    }
+
+    /// Update the mention_statuses field in a message's meta
+    async fn update_mention_status(
+        &self,
+        message_id: Uuid,
+        agent_name: &str,
+        status: &str,
+    ) {
+        // Fetch the current message
+        let Ok(Some(message)) = ChatMessage::find_by_id(&self.db.pool, message_id).await else {
+            tracing::warn!(
+                message_id = %message_id,
+                "failed to fetch message for mention status update"
+            );
+            return;
+        };
+
+        // Update the meta with new mention status
+        let mut meta = message.meta.0.clone();
+        let mention_statuses = meta
+            .get_mut("mention_statuses")
+            .and_then(|v| v.as_object_mut());
+
+        if let Some(statuses) = mention_statuses {
+            statuses.insert(agent_name.to_string(), serde_json::json!(status));
+        } else {
+            let mut new_statuses = serde_json::Map::new();
+            new_statuses.insert(agent_name.to_string(), serde_json::json!(status));
+            meta["mention_statuses"] = serde_json::Value::Object(new_statuses);
+        }
+
+        // Persist the updated meta
+        if let Err(err) = ChatMessage::update_meta(&self.db.pool, message_id, meta).await {
+            tracing::warn!(
+                message_id = %message_id,
+                error = %err,
+                "failed to update message mention status"
+            );
+        }
     }
 
     pub async fn handle_message(&self, session: &ChatSession, message: &ChatMessage) {
@@ -258,8 +318,24 @@ impl ChatRunner {
                 session_agent_id: session_agent.id,
                 agent_id: agent.id,
                 state: ChatSessionAgentState::Running,
+                started_at: Some(session_agent.updated_at),
             },
         );
+
+        // Emit MentionAcknowledged running event
+        self.emit(
+            session_id,
+            ChatStreamEvent::MentionAcknowledged {
+                session_id,
+                message_id: source_message.id,
+                mentioned_agent: agent.name.clone(),
+                agent_id: agent.id,
+                status: MentionStatus::Running,
+            },
+        );
+
+        // Persist running status to message meta
+        self.update_mention_status(source_message.id, &agent.name, "running").await;
 
         let session_agent_id = session_agent.id;
         let agent_id = agent.id;
@@ -382,9 +458,12 @@ impl ChatRunner {
                 Some(reply_handle),
                 failed_flag.clone(),
                 chain_depth,
+                self.clone(),
+                source_message.id,
+                agent.name.clone(),
             );
 
-            self.spawn_exit_watcher(spawned.child, msg_store, failed_flag);
+            self.spawn_exit_watcher(spawned.child, msg_store, failed_flag, session_agent_id);
 
             Ok::<(), ChatRunnerError>(())
         }
@@ -403,6 +482,7 @@ impl ChatRunner {
                     session_agent_id,
                     agent_id,
                     state: ChatSessionAgentState::Dead,
+                    started_at: None,
                 },
             );
         }
@@ -869,6 +949,9 @@ impl ChatRunner {
         reply_handle: Option<String>,
         failed_flag: Arc<AtomicBool>,
         chain_depth: u32,
+        runner: ChatRunner,
+        source_message_id: Uuid,
+        agent_name: String,
     ) {
         let db = self.db.clone();
         let sender = self.sender_for(session_id);
@@ -979,7 +1062,14 @@ impl ChatRunner {
                             )
                             .await
                             {
-                                let _ = sender.send(ChatStreamEvent::MessageNew { message });
+                                // Call handle_message to process @mentions in the agent's response
+                                // This enables AI-to-AI message routing (chain calls)
+                                if let Ok(Some(session)) = ChatSession::find_by_id(&db.pool, session_id).await {
+                                    runner.handle_message(&session, &message).await;
+                                } else {
+                                    // Fallback: emit MessageNew event if session lookup fails
+                                    let _ = sender.send(ChatStreamEvent::MessageNew { message });
+                                }
                             }
                         }
 
@@ -1011,8 +1101,47 @@ impl ChatRunner {
                         let _ = sender.send(ChatStreamEvent::AgentState {
                             session_agent_id,
                             agent_id,
-                            state: final_state,
+                            state: final_state.clone(),
+                            started_at: None,
                         });
+
+                        // Emit MentionAcknowledged completed/failed event
+                        let mention_status = if final_state == ChatSessionAgentState::Dead {
+                            MentionStatus::Failed
+                        } else {
+                            MentionStatus::Completed
+                        };
+                        let _ = sender.send(ChatStreamEvent::MentionAcknowledged {
+                            session_id,
+                            message_id: source_message_id,
+                            mentioned_agent: agent_name.clone(),
+                            agent_id,
+                            status: mention_status.clone(),
+                        });
+
+                        // Persist completed/failed status to message meta
+                        let status_str = match mention_status {
+                            MentionStatus::Completed => "completed",
+                            MentionStatus::Failed => "failed",
+                            MentionStatus::Running => "running",
+                        };
+                        if let Ok(Some(msg)) = ChatMessage::find_by_id(&db.pool, source_message_id).await {
+                            let mut meta = msg.meta.0.clone();
+                            let mention_statuses = meta
+                                .get_mut("mention_statuses")
+                                .and_then(|v| v.as_object_mut());
+
+                            if let Some(statuses) = mention_statuses {
+                                statuses.insert(agent_name.clone(), serde_json::json!(status_str));
+                            } else {
+                                let mut new_statuses = serde_json::Map::new();
+                                new_statuses.insert(agent_name.clone(), serde_json::json!(status_str));
+                                meta["mention_statuses"] = serde_json::Value::Object(new_statuses);
+                            }
+
+                            let _ = ChatMessage::update_meta(&db.pool, source_message_id, meta).await;
+                        }
+
                         break;
                     }
                     _ => {}
@@ -1023,31 +1152,88 @@ impl ChatRunner {
 
     fn spawn_exit_watcher(
         &self,
-        mut child: command_group::AsyncGroupChild,
+        child: command_group::AsyncGroupChild,
         msg_store: Arc<MsgStore>,
         failed_flag: Arc<AtomicBool>,
+        session_agent_id: Uuid,
     ) {
+        // Store the process reference for potential termination
+        let process_ref = Arc::new(Mutex::new(Some(child)));
+        self.running_processes.insert(session_agent_id, process_ref.clone());
+
+        let running_processes = self.running_processes.clone();
         tokio::spawn(async move {
             loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        if !status.success() {
-                            failed_flag.store(true, Ordering::Relaxed);
+                let mut guard = process_ref.lock().await;
+                if let Some(ref mut child) = *guard {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            if !status.success() {
+                                failed_flag.store(true, Ordering::Relaxed);
+                            }
+                            msg_store.push_finished();
+                            drop(guard);
+                            // Clean up the process reference
+                            running_processes.remove(&session_agent_id);
+                            break;
                         }
-                        msg_store.push_finished();
-                        break;
+                        Ok(None) => {
+                            drop(guard);
+                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        }
+                        Err(err) => {
+                            msg_store.push(LogMsg::Stderr(format!("process wait error: {err}")));
+                            failed_flag.store(true, Ordering::Relaxed);
+                            msg_store.push_finished();
+                            drop(guard);
+                            // Clean up the process reference
+                            running_processes.remove(&session_agent_id);
+                            break;
+                        }
                     }
-                    Ok(None) => {
-                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                    }
-                    Err(err) => {
-                        msg_store.push(LogMsg::Stderr(format!("process wait error: {err}")));
-                        failed_flag.store(true, Ordering::Relaxed);
-                        msg_store.push_finished();
-                        break;
-                    }
+                } else {
+                    // Process was terminated externally
+                    drop(guard);
+                    running_processes.remove(&session_agent_id);
+                    break;
                 }
             }
         });
+    }
+
+    /// Stop a running agent by killing its process
+    pub async fn stop_agent(&self, session_id: Uuid, session_agent_id: Uuid) -> Result<(), ChatRunnerError> {
+        // Try to kill the process
+        if let Some(process_ref) = self.running_processes.get(&session_agent_id) {
+            let mut guard = process_ref.lock().await;
+            if let Some(mut child) = guard.take() {
+                // Kill the process group
+                let _ = child.kill();
+            }
+        }
+
+        // Update state to Dead
+        let session_agent = ChatSessionAgent::update_state(
+            &self.db.pool,
+            session_agent_id,
+            ChatSessionAgentState::Dead,
+        )
+        .await?;
+
+        // Emit state change event
+        self.emit(
+            session_id,
+            ChatStreamEvent::AgentState {
+                session_agent_id,
+                agent_id: session_agent.agent_id,
+                state: ChatSessionAgentState::Dead,
+                started_at: None,
+            },
+        );
+
+        // Clean up the process reference
+        self.running_processes.remove(&session_agent_id);
+
+        Ok(())
     }
 }

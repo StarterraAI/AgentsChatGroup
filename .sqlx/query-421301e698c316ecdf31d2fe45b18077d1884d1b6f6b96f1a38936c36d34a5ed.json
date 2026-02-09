@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM chat_messages WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "421301e698c316ecdf31d2fe45b18077d1884d1b6f6b96f1a38936c36d34a5ed"
+}

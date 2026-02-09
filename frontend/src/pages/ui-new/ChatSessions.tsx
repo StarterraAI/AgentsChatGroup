@@ -11,6 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   CaretRightIcon,
   ChatsTeardropIcon,
+  CheckCircleIcon,
   PencilSimpleIcon,
   PaperclipIcon,
   PaperPlaneRightIcon,
@@ -18,6 +19,7 @@ import {
   UsersIcon,
   ArrowsOutSimpleIcon,
   ArrowsInSimpleIcon,
+  XCircleIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import {
@@ -48,6 +50,7 @@ import { getActualTheme } from '@/utils/theme';
 import {
   type SessionMember,
   type RunHistoryItem,
+  type MentionStatus,
   useChatData,
   useRunHistory,
   useChatMutations,
@@ -60,12 +63,32 @@ import {
   memberNameRegex,
   getMessageTone,
   extractDiffMeta,
+  extractMentions,
   extractReferenceId,
   extractAttachments,
   formatBytes,
   truncateText,
   sanitizeHandle,
 } from './chat';
+
+const mentionStatusPriority: Record<MentionStatus, number> = {
+  received: 0,
+  running: 1,
+  completed: 2,
+  failed: 2,
+};
+
+const coerceMentionStatus = (value: unknown): MentionStatus | null => {
+  if (
+    value === 'received' ||
+    value === 'running' ||
+    value === 'completed' ||
+    value === 'failed'
+  ) {
+    return value;
+  }
+  return null;
+};
 
 export function ChatSessions() {
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -109,10 +132,18 @@ export function ChatSessions() {
   }, []);
 
   // WebSocket connection
-  const { streamingRuns, agentStates, setAgentStates } = useChatWebSocket(
-    activeSessionId,
-    upsertMessage
-  );
+  const {
+    streamingRuns,
+    agentStates,
+    agentStateInfos,
+    mentionStatuses,
+    setAgentStates,
+    setMentionStatuses,
+  } =
+    useChatWebSocket(
+      activeSessionId,
+      upsertMessage
+    );
 
   // Mutations
   const {
@@ -196,8 +227,8 @@ export function ChatSessions() {
   const [logContent, setLogContent] = useState('');
   const [logLoading, setLogLoading] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
-  const [runningSince, setRunningSince] = useState<Record<string, number>>({});
   const [clock, setClock] = useState(() => Date.now());
+  const [stoppingAgents, setStoppingAgents] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -211,6 +242,47 @@ export function ChatSessions() {
       setMessages([]);
     }
   }, [messagesData, activeSessionId]);
+
+  useEffect(() => {
+    if (messagesData.length === 0) return;
+    setMentionStatuses((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const message of messagesData) {
+        const meta = message.meta;
+        if (!meta || typeof meta !== 'object' || Array.isArray(meta)) continue;
+        const rawStatuses = (meta as { mention_statuses?: unknown })
+          .mention_statuses;
+        if (
+          !rawStatuses ||
+          typeof rawStatuses !== 'object' ||
+          Array.isArray(rawStatuses)
+        ) {
+          continue;
+        }
+        const perMessage = new Map(next.get(message.id) ?? []);
+        let perMessageChanged = false;
+        for (const [agentName, statusValue] of Object.entries(
+          rawStatuses as Record<string, unknown>
+        )) {
+          const status = coerceMentionStatus(statusValue);
+          if (!status) continue;
+          const existing = perMessage.get(agentName);
+          const existingPriority =
+            existing ? mentionStatusPriority[existing] : -1;
+          if (mentionStatusPriority[status] > existingPriority) {
+            perMessage.set(agentName, status);
+            perMessageChanged = true;
+          }
+        }
+        if (perMessageChanged) {
+          next.set(message.id, perMessage);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [messagesData, setMentionStatuses]);
 
   // Reset state on session change
   useEffect(() => {
@@ -230,8 +302,8 @@ export function ChatSessions() {
     setLogRunId(null);
     setLogContent('');
     setLogError(null);
-    setRunningSince({});
     setClock(Date.now());
+    setStoppingAgents(new Set());
     setIsEditingTitle(false);
     setTitleError(null);
     setIsPromptEditorOpen(false);
@@ -319,6 +391,14 @@ export function ChatSessions() {
     () => sortedSessions.find((session) => session.id === activeSessionId),
     [sortedSessions, activeSessionId]
   );
+
+  const agentIdByName = useMemo(() => {
+    const map = new Map<string, string>();
+    sessionMembers.forEach((member) => {
+      map.set(member.agent.name, member.agent.id);
+    });
+    return map;
+  }, [sessionMembers]);
 
   const isArchived = activeSession?.status === ChatSessionStatus.archived;
 
@@ -447,41 +527,15 @@ export function ChatSessions() {
     });
   }, [sessionAgents, setAgentStates]);
 
-  // Running timer
+  // Running timer - tick clock when any agent is running
   useEffect(() => {
-    setRunningSince((prev) => {
-      const runningIds = new Set(
-        sessionMembers
-          .filter(
-            (member) =>
-              agentStates[member.agent.id] === ChatSessionAgentState.running
-          )
-          .map((member) => member.agent.id)
-      );
-
-      let changed = false;
-      const next = { ...prev };
-      for (const id of runningIds) {
-        if (!next[id]) {
-          next[id] = Date.now();
-          changed = true;
-        }
-      }
-      for (const id of Object.keys(next)) {
-        if (!runningIds.has(id)) {
-          delete next[id];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [agentStates, sessionMembers]);
-
-  useEffect(() => {
-    if (Object.keys(runningSince).length === 0) return;
+    const hasRunning = sessionMembers.some(
+      (member) => agentStates[member.agent.id] === ChatSessionAgentState.running
+    );
+    if (!hasRunning) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [runningSince]);
+  }, [agentStates, sessionMembers]);
 
   // Title editing
   useEffect(() => {
@@ -545,12 +599,7 @@ export function ChatSessions() {
   const handleSend = async () => {
     if (!activeSessionId || isArchived) return;
     const trimmed = draft.trim();
-    const contentMentions = new Set<string>();
-    const mentionTokenRegex = /(^|\s)@([a-zA-Z0-9_-]+)/g;
-    for (const match of draft.matchAll(mentionTokenRegex)) {
-      const name = match[2];
-      if (name) contentMentions.add(name);
-    }
+    const contentMentions = extractMentions(draft);
     const mentionsToInject = selectedMentions.filter(
       (name) => !contentMentions.has(name)
     );
@@ -898,6 +947,25 @@ export function ChatSessions() {
     [getMessageMentionHandle, handleReplySelect]
   );
 
+  const handleStopAgent = useCallback(
+    async (sessionAgentId: string, agentId: string) => {
+      if (!activeSessionId) return;
+      setStoppingAgents((prev) => new Set(prev).add(agentId));
+      try {
+        await chatApi.stopSessionAgent(activeSessionId, sessionAgentId);
+      } catch (error) {
+        console.warn('Failed to stop agent', error);
+      } finally {
+        setStoppingAgents((prev) => {
+          const next = new Set(prev);
+          next.delete(agentId);
+          return next;
+        });
+      }
+    },
+    [activeSessionId]
+  );
+
   return (
     <div className="relative flex h-full min-h-0 bg-primary overflow-hidden">
       {/* Session List Sidebar */}
@@ -1113,6 +1181,10 @@ export function ChatSessions() {
               diffRunId.length > 0 &&
               (diffInfo.available || diffInfo.untrackedFiles.length > 0);
             const attachments = extractAttachments(message.meta);
+            const mentionList = Array.from(
+              new Set(message.mentions.filter((mention) => mention.length > 0))
+            );
+            const mentionStatusMap = mentionStatuses.get(message.id);
             const referenceId = extractReferenceId(message.meta);
             const referenceMessage = referenceId
               ? messageById.get(referenceId)
@@ -1211,6 +1283,51 @@ export function ChatSessions() {
                     </div>
                   )}
                   <ChatMarkdown content={message.content} />
+                  {mentionList.length > 0 && (
+                    <div className="mt-half flex flex-wrap items-center gap-half text-xs text-low">
+                      <span>Mentions:</span>
+                      {mentionList.map((mention) => {
+                        const agentId = agentIdByName.get(mention);
+                        const mentionStatus = mentionStatusMap?.get(mention);
+                        const isFallbackRunning =
+                          !mentionStatusMap &&
+                          !!agentId &&
+                          agentStates[agentId] === ChatSessionAgentState.running;
+                        const isRunning =
+                          mentionStatus === 'running' ||
+                          mentionStatus === 'received' ||
+                          isFallbackRunning;
+                        const isCompleted = mentionStatus === 'completed';
+                        const isFailed = mentionStatus === 'failed';
+                        const showCheck = !isFailed && (isRunning || isCompleted);
+                        const pulse = mentionStatus === 'running';
+                        return (
+                          <Badge
+                            key={`${message.id}-mention-${mention}`}
+                            variant="secondary"
+                            className="flex items-center gap-1 px-2 py-0.5 text-xs"
+                          >
+                            @{mention}
+                            {showCheck && (
+                              <CheckCircleIcon
+                                className={cn(
+                                  'size-icon-2xs text-success',
+                                  pulse && 'animate-pulse'
+                                )}
+                                weight="fill"
+                              />
+                            )}
+                            {isFailed && (
+                              <XCircleIcon
+                                className="size-icon-2xs text-error"
+                                weight="fill"
+                              />
+                            )}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
                   {attachments.length > 0 && (
                     <div className="mt-half space-y-half">
                       {attachments.map((attachment) => {
@@ -1304,12 +1421,17 @@ export function ChatSessions() {
 
           {/* Running placeholders */}
           {placeholderAgents.map((member) => {
-            const startedAt = runningSince[member.agent.id] ?? clock;
+            const stateInfo = agentStateInfos[member.agent.id];
+            const startedAtStr = stateInfo?.startedAt;
+            const startedAtMs = startedAtStr
+              ? new Date(startedAtStr).getTime()
+              : clock;
             const elapsedSeconds = Math.max(
               0,
-              Math.floor((clock - startedAt) / 1000)
+              Math.floor((clock - startedAtMs) / 1000)
             );
             const tone = getMessageTone(member.agent.id, false);
+            const isStopping = stoppingAgents.has(member.agent.id);
             return (
               <div
                 key={`placeholder-${member.agent.id}`}
@@ -1325,8 +1447,25 @@ export function ChatSessions() {
                     backgroundColor: tone.bg,
                     borderColor: tone.border,
                   }}
+                  headerRight={
+                    <button
+                      type="button"
+                      className={cn(
+                        'text-xs text-error hover:text-error/80',
+                        isStopping && 'opacity-50 cursor-not-allowed'
+                      )}
+                      onClick={() =>
+                        handleStopAgent(member.sessionAgent.id, member.agent.id)
+                      }
+                      disabled={isStopping}
+                    >
+                      {isStopping ? '停止中...' : '停止'}
+                    </button>
+                  }
                 >
-                  <ChatMarkdown content={`回复中。。。已用${elapsedSeconds}秒`} />
+                  <div className="text-sm text-low">
+                    工作执行中，请稀等... 已用{elapsedSeconds}秒
+                  </div>
                 </ChatEntryContainer>
               </div>
             );
@@ -1336,6 +1475,10 @@ export function ChatSessions() {
           {Object.entries(streamingRuns).map(([runId, run]) => {
             const agentName = agentById.get(run.agentId)?.name ?? 'Agent';
             const tone = getMessageTone(run.agentId, false);
+            const sessionAgent = sessionAgents.find(
+              (sa) => sa.agent_id === run.agentId
+            );
+            const isStopping = stoppingAgents.has(run.agentId);
             return (
               <div key={`stream-${runId}`} className="flex justify-start">
                 <ChatEntryContainer
@@ -1349,13 +1492,30 @@ export function ChatSessions() {
                     borderColor: tone.border,
                   }}
                   headerRight={
-                    <div className="flex items-center gap-half text-xs text-low">
-                      <span>Streaming</span>
-                      <span className="flex items-center gap-[2px]">
-                        <span className="size-dot rounded-full bg-brand animate-running-dot-1" />
-                        <span className="size-dot rounded-full bg-brand animate-running-dot-2" />
-                        <span className="size-dot rounded-full bg-brand animate-running-dot-3" />
+                    <div className="flex items-center gap-base text-xs text-low">
+                      <span className="flex items-center gap-half">
+                        <span>工作执行中，请稀等</span>
+                        <span className="flex items-center gap-[2px]">
+                          <span className="size-dot rounded-full bg-brand animate-running-dot-1" />
+                          <span className="size-dot rounded-full bg-brand animate-running-dot-2" />
+                          <span className="size-dot rounded-full bg-brand animate-running-dot-3" />
+                        </span>
                       </span>
+                      {sessionAgent && (
+                        <button
+                          type="button"
+                          className={cn(
+                            'text-error hover:text-error/80',
+                            isStopping && 'opacity-50 cursor-not-allowed'
+                          )}
+                          onClick={() =>
+                            handleStopAgent(sessionAgent.id, run.agentId)
+                          }
+                          disabled={isStopping}
+                        >
+                          {isStopping ? '停止中...' : '停止'}
+                        </button>
+                      )}
                     </div>
                   }
                 >

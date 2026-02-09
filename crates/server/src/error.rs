@@ -16,6 +16,7 @@ use git2::Error as Git2Error;
 use local_deployment::pty::PtyError;
 use services::services::{
     chat::ChatServiceError,
+    chat_runner::ChatRunnerError,
     config::{ConfigError, EditorOpenError},
     container::ContainerError,
     git_host::GitHostError,
@@ -62,6 +63,8 @@ pub enum ApiError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Chat(#[from] ChatServiceError),
+    #[error(transparent)]
+    ChatRunner(#[from] ChatRunnerError),
     #[error(transparent)]
     Image(#[from] ImageError),
     #[error("Multipart error: {0}")]
@@ -399,6 +402,13 @@ impl IntoResponse for ApiError {
             ApiError::Chat(ChatServiceError::Io(_)) => {
                 ErrorInfo::internal("ChatServiceError")
             }
+            ApiError::ChatRunner(ChatRunnerError::AgentNotFound(_)) => {
+                ErrorInfo::not_found("ChatRunnerError", "Chat agent not found.")
+            }
+            ApiError::ChatRunner(ChatRunnerError::UnknownRunnerType(_)) => {
+                ErrorInfo::bad_request("ChatRunnerError", "Unknown runner type.")
+            }
+            ApiError::ChatRunner(_) => ErrorInfo::internal("ChatRunnerError"),
             ApiError::Io(_) => ErrorInfo::internal("IoError"),
             ApiError::Migration(MigrationError::Database(_)) => {
                 ErrorInfo::internal("MigrationError")

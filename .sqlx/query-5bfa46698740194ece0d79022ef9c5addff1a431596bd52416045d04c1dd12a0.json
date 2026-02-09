@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\",\n                      session_id as \"session_id!: Uuid\",\n                      session_agent_id as \"session_agent_id!: Uuid\",\n                      run_index,\n                      run_dir,\n                      input_path,\n                      output_path,\n                      raw_log_path,\n                      meta_path,\n                      created_at as \"created_at!: DateTime<Utc>\"\n               FROM chat_runs\n               WHERE session_agent_id = $1\n               ORDER BY run_index DESC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "session_agent_id!: Uuid",
+        "ordinal": 2,
+        "type_info": "Blob"
+      },
+      {
+        "name": "run_index",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "run_dir",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "input_path",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "output_path",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "raw_log_path",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "meta_path",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5bfa46698740194ece0d79022ef9c5addff1a431596bd52416045d04c1dd12a0"
+}

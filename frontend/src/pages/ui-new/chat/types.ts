@@ -9,6 +9,13 @@ export type StreamRun = {
   isFinal: boolean;
 };
 
+export type AgentStateInfo = {
+  state: import('shared/types').ChatSessionAgentState;
+  startedAt: string | null;
+};
+
+export type MentionStatus = 'received' | 'running' | 'completed' | 'failed';
+
 export type RunHistoryItem = {
   runId: string;
   agentId: string;

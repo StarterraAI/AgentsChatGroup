@@ -287,3 +287,31 @@ async fn handle_chat_stream_ws(
 
     Ok(())
 }
+
+/// Stop a running agent
+pub async fn stop_session_agent(
+    Extension(session): Extension<ChatSession>,
+    State(deployment): State<DeploymentImpl>,
+    axum::extract::Path(session_agent_id): axum::extract::Path<Uuid>,
+) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    // Check that session agent exists and belongs to this session
+    let Some(existing) =
+        ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
+    else {
+        return Err(ApiError::BadRequest("Chat session agent not found".to_string()));
+    };
+
+    if existing.session_id != session.id {
+        return Err(ApiError::Forbidden(
+            "Chat session agent does not belong to this session".to_string(),
+        ));
+    }
+
+    // Stop the agent
+    deployment
+        .chat_runner()
+        .stop_agent(session.id, session_agent_id)
+        .await?;
+
+    Ok(ResponseJson(ApiResponse::success(())))
+}

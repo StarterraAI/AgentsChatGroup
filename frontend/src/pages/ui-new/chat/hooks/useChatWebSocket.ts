@@ -1,14 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage, ChatSessionAgentState, ChatStreamEvent } from 'shared/types';
+import type {
+  ChatMessage,
+  ChatSessionAgentState,
+  ChatStreamEvent,
+} from 'shared/types';
 import { chatApi } from '@/lib/api';
-import type { StreamRun } from '../types';
+import type { AgentStateInfo, MentionStatus, StreamRun } from '../types';
 import { extractRunId } from '../utils';
+
+type MentionAcknowledgedEvent = {
+  type: 'mention_acknowledged';
+  session_id: string;
+  message_id: string;
+  mentioned_agent: string;
+  agent_id: string;
+  status: MentionStatus;
+};
+
+type ChatStreamPayload = ChatStreamEvent | MentionAcknowledgedEvent;
 
 export interface UseChatWebSocketResult {
   streamingRuns: Record<string, StreamRun>;
   agentStates: Record<string, ChatSessionAgentState>;
+  agentStateInfos: Record<string, AgentStateInfo>;
+  mentionStatuses: Map<string, Map<string, MentionStatus>>;
   setAgentStates: React.Dispatch<
     React.SetStateAction<Record<string, ChatSessionAgentState>>
+  >;
+  setAgentStateInfos: React.Dispatch<
+    React.SetStateAction<Record<string, AgentStateInfo>>
+  >;
+  setMentionStatuses: React.Dispatch<
+    React.SetStateAction<Map<string, Map<string, MentionStatus>>>
   >;
 }
 
@@ -22,6 +45,12 @@ export function useChatWebSocket(
   const [agentStates, setAgentStates] = useState<
     Record<string, ChatSessionAgentState>
   >({});
+  const [agentStateInfos, setAgentStateInfos] = useState<
+    Record<string, AgentStateInfo>
+  >({});
+  const [mentionStatuses, setMentionStatuses] = useState<
+    Map<string, Map<string, MentionStatus>>
+  >(new Map());
 
   const handleMessageNew = useCallback(
     (message: ChatMessage) => {
@@ -71,11 +100,31 @@ export function useChatWebSocket(
   );
 
   const handleAgentState = useCallback(
-    (payload: ChatStreamEvent & { type: 'agent_state' }) => {
+    (payload: ChatStreamEvent & { type: 'agent_state' } & { started_at?: string | null }) => {
       setAgentStates((prev) => ({
         ...prev,
         [payload.agent_id]: payload.state,
       }));
+      setAgentStateInfos((prev) => ({
+        ...prev,
+        [payload.agent_id]: {
+          state: payload.state,
+          startedAt: payload.started_at ?? null,
+        },
+      }));
+    },
+    []
+  );
+
+  const handleMentionAcknowledged = useCallback(
+    (payload: MentionAcknowledgedEvent) => {
+      setMentionStatuses((prev) => {
+        const next = new Map(prev);
+        const perMessage = new Map(next.get(payload.message_id) ?? []);
+        perMessage.set(payload.mentioned_agent, payload.status);
+        next.set(payload.message_id, perMessage);
+        return next;
+      });
     },
     []
   );
@@ -94,7 +143,11 @@ export function useChatWebSocket(
 
       ws.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data) as ChatStreamEvent;
+          const payload = JSON.parse(event.data) as ChatStreamPayload;
+          if (payload.type === 'mention_acknowledged') {
+            handleMentionAcknowledged(payload);
+            return;
+          }
           if (payload.type === 'message_new') {
             handleMessageNew(payload.message);
             return;
@@ -136,11 +189,17 @@ export function useChatWebSocket(
   useEffect(() => {
     setStreamingRuns({});
     setAgentStates({});
+    setAgentStateInfos({});
+    setMentionStatuses(new Map());
   }, [activeSessionId]);
 
   return {
     streamingRuns,
     agentStates,
+    agentStateInfos,
+    mentionStatuses,
     setAgentStates,
+    setAgentStateInfos,
+    setMentionStatuses,
   };
 }

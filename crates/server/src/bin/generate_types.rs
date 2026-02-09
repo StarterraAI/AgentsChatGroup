@@ -61,6 +61,7 @@ fn generate_types_content() -> String {
         db::models::chat_artifact::ChatArtifact::decl(),
         db::models::chat_run::ChatRun::decl(),
         services::services::chat_runner::ChatStreamEvent::decl(),
+        services::services::chat_runner::MentionStatus::decl(),
         db::models::image::Image::decl(),
         db::models::image::CreateImage::decl(),
         db::models::workspace::Workspace::decl(),

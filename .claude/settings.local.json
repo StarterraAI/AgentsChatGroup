@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pnpm run check:*)",
       "Bash(cargo check:*)",
-      "Bash(git worktree add:*)"
+      "Bash(git worktree add:*)",
+      "Bash(where cargo:*)"
     ]
   }
 }
