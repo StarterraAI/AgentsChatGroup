@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{io, path::Path, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use command_group::{AsyncCommandGroup, AsyncGroupChild};
@@ -29,7 +29,10 @@ mod sdk;
 mod slash_commands;
 mod types;
 
-use sdk::{LogWriter, RunConfig, generate_server_password, run_session, run_slash_command};
+use sdk::{
+    LogWriter, RunConfig, build_default_headers, generate_server_password, list_providers,
+    run_session, run_slash_command, wait_for_health,
+};
 use slash_commands::{OpencodeSlashCommand, hardcoded_slash_commands};
 
 #[derive(Derivative, Clone, Serialize, Deserialize, TS, JsonSchema)]
@@ -90,6 +93,33 @@ impl Opencode {
     /// Compute a cache key for model context windows based on configuration that can affect the list of available models.
     fn compute_models_cache_key(&self) -> String {
         serde_json::to_string(&self.cmd).unwrap_or_default()
+    }
+
+    pub async fn list_models(
+        &self,
+        current_dir: &Path,
+        env: &ExecutionEnv,
+    ) -> Result<Vec<String>, ExecutorError> {
+        let server = self.spawn_server(current_dir, env).await?;
+        let directory = current_dir.to_string_lossy().to_string();
+        let client = reqwest::Client::builder()
+            .default_headers(build_default_headers(&directory, &server.server_password))
+            .build()
+            .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;
+
+        wait_for_health(&client, &server.base_url).await?;
+        let providers = list_providers(&client, &server.base_url, &directory).await?;
+        let mut models = Vec::new();
+
+        for provider in providers.all {
+            for model_id in provider.models.keys() {
+                models.push(format!("{}/{}", provider.id, model_id));
+            }
+        }
+
+        models.sort();
+        models.dedup();
+        Ok(models)
     }
 
     /// Common boilerplate for spawning an OpenCode server process.

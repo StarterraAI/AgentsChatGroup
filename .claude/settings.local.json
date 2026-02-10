@@ -4,7 +4,10 @@
       "Bash(pnpm run check:*)",
       "Bash(cargo check:*)",
       "Bash(git worktree add:*)",
-      "Bash(where cargo:*)"
+      "Bash(where cargo:*)",
+      "Bash(cmd.exe /c \"cd /d E:\\\\workspace\\\\kanban\\\\vibe-kanban && cargo check -p executors 2>&1\")",
+      "Bash(powershell.exe -Command \"cd E:\\\\workspace\\\\kanban\\\\vibe-kanban; cargo check -p executors 2>&1\")",
+      "Bash(powershell.exe -Command \"$env:USERPROFILE\\\\.cargo\\\\bin\\\\cargo.exe check -p executors --manifest-path E:\\\\workspace\\\\kanban\\\\vibe-kanban\\\\Cargo.toml 2>&1\")"
     ]
   }
 }

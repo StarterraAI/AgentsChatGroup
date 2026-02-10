@@ -382,7 +382,7 @@ async fn run_session_inner(
     Ok(())
 }
 
-fn build_default_headers(directory: &str, password: &str) -> HeaderMap {
+pub(super) fn build_default_headers(directory: &str, password: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Ok(value) = HeaderValue::from_str(directory) {
         headers.insert("x-opencode-directory", value);

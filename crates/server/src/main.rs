@@ -1,6 +1,9 @@
 ﻿use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
-use executors::profile::ExecutorConfigs;
+use executors::{
+    env::{ExecutionEnv, RepoContext},
+    model_sync,
+};
 use server::{DeploymentImpl, routes};
 use services::services::container::ContainerService;
 use sqlx::Error as SqlxError;
@@ -72,13 +75,21 @@ async fn main() -> Result<(), AgentChatgroupError> {
     deployment
         .track_if_analytics_allowed("session_start", serde_json::json!({}))
         .await;
-    // Keep executor profiles in sync with on-disk configuration.
+    // Keep executor profiles in sync with agent model listings.
+    let model_refresh_dir = std::env::current_dir().unwrap_or_else(|_| asset_dir());
+    let model_refresh_env = ExecutionEnv::new(RepoContext::default(), false, String::new());
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(5 * 60));
         loop {
             ticker.tick().await;
-            ExecutorConfigs::reload();
-            tracing::debug!("Reloaded executor profiles cache");
+            if let Err(err) = model_sync::refresh_profiles_from_agent_models(
+                &model_refresh_dir,
+                &model_refresh_env,
+            )
+            .await
+            {
+                tracing::warn!("Failed to refresh agent model profiles: {err}");
+            }
         }
     });
     // Pre-warm file search cache for most active projects
