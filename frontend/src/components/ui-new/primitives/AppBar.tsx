@@ -1,6 +1,5 @@
 import {
   ChatsTeardropIcon,
-  LayoutIcon,
   PlusIcon,
   SpinnerIcon,
 } from '@phosphor-icons/react';
@@ -46,10 +45,10 @@ export function AppBar({
   onOrgSelect,
   onCreateOrg,
   onCreateProject,
-  onWorkspacesClick,
+  onWorkspacesClick: _onWorkspacesClick,
   onChatClick,
   onProjectClick,
-  isWorkspacesActive,
+  isWorkspacesActive: _isWorkspacesActive,
   isChatActive,
   activeProjectId,
   isSignedIn,
@@ -62,19 +61,13 @@ export function AppBar({
         'bg-secondary border-r border-border'
       )}
     >
-      {/* Top section: Workspaces button */}
+      {/* Top section: Chat button */}
       <div className="flex flex-col items-center gap-1">
         <AppBarButton
           icon={ChatsTeardropIcon}
           label="Chat"
           isActive={isChatActive}
           onClick={onChatClick}
-        />
-        <AppBarButton
-          icon={LayoutIcon}
-          label="Workspaces"
-          isActive={isWorkspacesActive}
-          onClick={onWorkspacesClick}
         />
       </div>
 

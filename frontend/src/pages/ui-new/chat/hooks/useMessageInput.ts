@@ -19,6 +19,9 @@ export interface UseMessageInputResult {
   visibleMentionSuggestions: ChatAgent[];
   agentOptions: { value: string; label: string }[];
   resetInput: () => void;
+  highlightedMentionIndex: number;
+  setHighlightedMentionIndex: React.Dispatch<React.SetStateAction<number>>;
+  handleMentionKeyDown: (event: React.KeyboardEvent) => boolean;
 }
 
 export function useMessageInput(
@@ -29,14 +32,18 @@ export function useMessageInput(
   const [selectedMentions, setSelectedMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
+  const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
 
   const handleDraftChange = useCallback((value: string) => {
     setDraft(value);
     const match = mentionRegex.exec(value);
     if (match) {
       setMentionQuery(match[2] ?? '');
+      // Reset highlight to first item when query changes
+      setHighlightedMentionIndex(0);
     } else {
       setMentionQuery(null);
+      setHighlightedMentionIndex(0);
     }
   }, []);
 
@@ -84,6 +91,52 @@ export function useMessageInput(
     );
   }, [mentionAgents, mentionQuery]);
 
+  // Handle keyboard navigation for mention suggestions
+  // Returns true if the event was handled (should prevent default behavior)
+  const handleMentionKeyDown = useCallback(
+    (event: React.KeyboardEvent): boolean => {
+      // Only handle when mention suggestions are visible
+      if (mentionQuery === null || visibleMentionSuggestions.length === 0) {
+        return false;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setHighlightedMentionIndex((prev) =>
+          prev < visibleMentionSuggestions.length - 1 ? prev + 1 : 0
+        );
+        return true;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setHighlightedMentionIndex((prev) =>
+          prev > 0 ? prev - 1 : visibleMentionSuggestions.length - 1
+        );
+        return true;
+      }
+
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const selectedAgent = visibleMentionSuggestions[highlightedMentionIndex];
+        if (selectedAgent) {
+          handleMentionSelect(selectedAgent.name);
+        }
+        return true;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMentionQuery(null);
+        setHighlightedMentionIndex(0);
+        return true;
+      }
+
+      return false;
+    },
+    [mentionQuery, visibleMentionSuggestions, highlightedMentionIndex, handleMentionSelect]
+  );
+
   const agentOptions = useMemo(
     () =>
       mentionAgents.map((agent) => ({
@@ -111,6 +164,7 @@ export function useMessageInput(
     setSelectedMentions([]);
     setMentionQuery(null);
     setReplyToMessage(null);
+    setHighlightedMentionIndex(0);
   }, []);
 
   return {
@@ -129,5 +183,8 @@ export function useMessageInput(
     visibleMentionSuggestions,
     agentOptions,
     resetInput,
+    highlightedMentionIndex,
+    setHighlightedMentionIndex,
+    handleMentionKeyDown,
   };
 }

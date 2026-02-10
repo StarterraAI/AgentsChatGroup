@@ -209,6 +209,8 @@ export function ChatSessions() {
     visibleMentionSuggestions,
     agentOptions,
     resetInput,
+    highlightedMentionIndex,
+    handleMentionKeyDown,
   } = useMessageInput(mentionAgents);
 
   // Diff viewer
@@ -1967,6 +1969,11 @@ export function ChatSessions() {
               value={draft}
               onChange={(event) => handleDraftChange(event.target.value)}
               onKeyDown={(event) => {
+                // First check if mention suggestions should handle the key
+                if (handleMentionKeyDown(event)) {
+                  return;
+                }
+                // Otherwise handle send on Enter
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   handleSend();
@@ -1987,14 +1994,17 @@ export function ChatSessions() {
             />
             {mentionQuery !== null && visibleMentionSuggestions.length > 0 && (
               <div className="absolute z-20 left-0 right-0 bottom-full mb-half bg-panel border border-border rounded-sm shadow">
-                {visibleMentionSuggestions.map((agent) => (
+                {visibleMentionSuggestions.map((agent, index) => (
                   <button
                     key={agent.id}
                     type="button"
                     onClick={() => handleMentionSelect(agent.name)}
                     className={cn(
                       'w-full px-base py-half text-left text-sm text-normal',
-                      'hover:bg-secondary flex items-center justify-between'
+                      'flex items-center justify-between',
+                      index === highlightedMentionIndex
+                        ? 'bg-secondary'
+                        : 'hover:bg-secondary'
                     )}
                   >
                     <span>@{agent.name}</span>
