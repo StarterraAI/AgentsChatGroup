@@ -891,17 +891,20 @@ impl ChatRunner {
         workspace_path: &str,
         run_dir: &PathBuf,
     ) -> Result<ContextSnapshot, ChatRunnerError> {
-        // Use compressed messages to reduce prompt size and token consumption
-        let messages =
-            crate::services::chat::build_structured_messages_with_compression(&self.db.pool, session_id).await?;
-        let mut jsonl = String::new();
-        for message in messages {
-            let line = serde_json::to_string(&message).unwrap_or_default();
-            jsonl.push_str(&line);
-            jsonl.push('\n');
-        }
+        // Use LLM-based compacted context for better compression
+        // When messages > 20, compresses oldest 5 into 1 summary, keeping 16 total messages
+        let workspace_path_buf = PathBuf::from(workspace_path);
+        let compacted = crate::services::chat::build_compacted_context(
+            &self.db.pool,
+            session_id,
+            None, // runner_type - will be used for LLM summarization in future
+            Some(workspace_path_buf.as_path()),
+        )
+        .await?;
 
-        let context_dir = PathBuf::from(workspace_path).join(".context");
+        let jsonl = compacted.jsonl;
+
+        let context_dir = workspace_path_buf.join(".context");
         fs::create_dir_all(&context_dir).await?;
         let context_path = context_dir.join("messages.jsonl");
         fs::write(&context_path, jsonl.as_bytes()).await?;
@@ -909,7 +912,7 @@ impl ChatRunner {
         let runs_dir = run_dir
             .parent()
             .map(|path| path.to_path_buf())
-            .unwrap_or_else(|| PathBuf::from(workspace_path).join(".runs"));
+            .unwrap_or_else(|| workspace_path_buf.join(".runs"));
         fs::create_dir_all(&runs_dir).await?;
         let run_context_path = runs_dir.join(format!("run_{session_id}.jsonl"));
         fs::write(&run_context_path, jsonl.as_bytes()).await?;

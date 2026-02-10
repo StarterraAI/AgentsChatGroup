@@ -1,16 +1,35 @@
-use std::{collections::HashMap, collections::HashSet, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use db::models::{
     chat_agent::ChatAgent,
     chat_message::{ChatMessage, ChatSenderType, CreateChatMessage},
     chat_session::{ChatSession, ChatSessionStatus},
+    chat_session_agent::ChatSessionAgent,
 };
 use chrono::Utc;
+use executors::{
+    approvals::NoopExecutorApprovalService,
+    env::{ExecutionEnv, RepoContext},
+    executors::{BaseCodingAgent, StandardCodingAgentExecutor},
+    logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
+    profile::{ExecutorConfigs, ExecutorProfileId},
+};
+use futures::StreamExt;
+use moka::sync::Cache;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
+use std::str::FromStr;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::{fs, io::AsyncWriteExt};
+use tokio_util::io::ReaderStream;
+use utils::{log_msg::LogMsg, msg_store::MsgStore};
 use uuid::Uuid;
 
 /// Maximum number of messages to include in context
@@ -19,6 +38,34 @@ const MAX_CONTEXT_MESSAGES: usize = 30;
 const RECENT_MESSAGES_FULL: usize = 5;
 /// Target compression ratio for older messages (keep ~40% of content)
 const COMPRESSION_TARGET_RATIO: f64 = 0.4;
+
+/// Threshold for triggering LLM-based compression (> 20 messages)
+const LLM_COMPRESSION_THRESHOLD: usize = 20;
+/// Number of oldest messages to compress via LLM
+const LLM_COMPRESSION_BATCH_SIZE: usize = 5;
+/// Size of context window to take from recent messages
+const CONTEXT_WINDOW_SIZE: usize = 20;
+
+/// Cache for LLM-generated summaries to avoid repeated API calls
+/// Key: hash of message IDs being compressed
+/// Value: the generated summary text
+static SUMMARY_CACHE: Lazy<Cache<String, String>> = Lazy::new(|| {
+    Cache::builder()
+        .time_to_live(Duration::from_secs(3600)) // 1 hour TTL
+        .max_capacity(100) // Max 100 cached summaries
+        .build()
+});
+
+/// Generate cache key from message IDs
+fn summary_cache_key(message_ids: &[Uuid]) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    for id in message_ids {
+        id.hash(&mut hasher);
+    }
+    format!("summary_{}", hasher.finish())
+}
 
 #[derive(Debug, Error)]
 pub enum ChatServiceError {
@@ -398,6 +445,504 @@ pub async fn build_structured_messages(
     }
 
     Ok(result)
+}
+
+/// Context with LLM-compressed summary message included
+pub struct CompactedContext {
+    /// The compacted messages (summary + recent messages)
+    pub messages: Vec<Value>,
+    /// Raw JSONL string for prompt injection
+    pub jsonl: String,
+}
+
+/// Build summary prompt for LLM compression
+/// This function is used when implementing LLM-based summarization
+#[allow(dead_code)]
+fn build_summary_prompt(messages_to_summarize: &[Value]) -> String {
+    let mut prompt = String::from(
+        "Summarize the following chat messages into a single concise summary. \
+        Preserve key information including:\n\
+        - Tasks/decisions made\n\
+        - Constraints and requirements mentioned\n\
+        - Names of people/agents mentioned\n\
+        - Important references or quotes\n\n\
+        Keep the summary under 500 characters. Output plain text only, no formatting.\n\n\
+        Messages to summarize:\n",
+    );
+
+    for msg in messages_to_summarize {
+        let sender_label = msg
+            .get("sender")
+            .and_then(|s| s.get("label"))
+            .and_then(|l| l.as_str())
+            .unwrap_or("unknown");
+        let content = msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        prompt.push_str(&format!("{}: {}\n", sender_label, content));
+    }
+
+    prompt
+}
+
+/// Create a summary message from compressed messages
+fn create_summary_message(
+    summary_text: &str,
+    compressed_message_ids: Vec<Uuid>,
+    earliest_created_at: &str,
+) -> Value {
+    serde_json::json!({
+        "id": Uuid::new_v4(),
+        "session_id": null,
+        "created_at": earliest_created_at,
+        "sender": {
+            "type": "system",
+            "id": null,
+            "handle": null,
+            "name": null,
+            "label": "summary",
+        },
+        "content": summary_text,
+        "mentions": [],
+        "meta": {
+            "summary_of": compressed_message_ids,
+            "compression": "llm",
+            "compressed": true,
+        },
+        "compressed": true,
+    })
+}
+
+/// Simple fallback compression by concatenating messages
+fn create_fallback_summary(messages_to_summarize: &[Value]) -> String {
+    let mut summary = String::from("[Context Summary] ");
+    for msg in messages_to_summarize.iter().take(LLM_COMPRESSION_BATCH_SIZE) {
+        let sender_label = msg
+            .get("sender")
+            .and_then(|s| s.get("label"))
+            .and_then(|l| l.as_str())
+            .unwrap_or("unknown");
+        let content = msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        // Keep only first 100 chars per message
+        let truncated = if content.len() > 100 {
+            format!("{}...", &content[..100])
+        } else {
+            content.to_string()
+        };
+        summary.push_str(&format!("{}:{} | ", sender_label, truncated));
+    }
+    if summary.len() > 500 {
+        summary.truncate(500);
+        summary.push_str("...");
+    }
+    summary
+}
+
+/// Generate summary using an LLM agent in the background
+/// This function spawns a background task and returns immediately
+/// The result is stored in the cache and will be available on subsequent calls
+async fn generate_llm_summary_background(
+    pool: SqlitePool,
+    session_id: Uuid,
+    message_ids: Vec<Uuid>,
+    messages_content: Vec<Value>,
+    workspace_path: PathBuf,
+) {
+    let cache_key = summary_cache_key(&message_ids);
+
+    // Check if already cached
+    if SUMMARY_CACHE.get(&cache_key).is_some() {
+        return;
+    }
+
+    // Spawn background task for LLM summarization
+    tokio::spawn(async move {
+        match generate_llm_summary_inner(&pool, session_id, &messages_content, &workspace_path).await {
+            Ok(summary) => {
+                tracing::info!(
+                    session_id = %session_id,
+                    "LLM summary generated successfully, caching result"
+                );
+                SUMMARY_CACHE.insert(cache_key, summary);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to generate LLM summary, will use fallback on next request"
+                );
+            }
+        }
+    });
+}
+
+/// Inner function to actually call the LLM for summarization
+async fn generate_llm_summary_inner(
+    pool: &SqlitePool,
+    session_id: Uuid,
+    messages_content: &[Value],
+    workspace_path: &Path,
+) -> Result<String, ChatServiceError> {
+    // Get the first session agent to use for summarization
+    let session_agents = ChatSessionAgent::find_all_for_session(pool, session_id).await?;
+    let first_agent = session_agents.first().ok_or_else(|| {
+        ChatServiceError::Validation("No agents configured for session".to_string())
+    })?;
+
+    // Get the agent details
+    let agent = ChatAgent::find_by_id(pool, first_agent.agent_id)
+        .await?
+        .ok_or_else(|| ChatServiceError::Validation("Agent not found".to_string()))?;
+
+    // Parse runner type
+    let runner_type_str = agent.runner_type.trim();
+    let normalized = runner_type_str
+        .replace('-', "_")
+        .replace(' ', "_")
+        .to_ascii_uppercase();
+    let base_agent = BaseCodingAgent::from_str(&normalized)
+        .map_err(|_| ChatServiceError::Validation(format!("Unknown runner type: {}", runner_type_str)))?;
+
+    // Build the summary prompt
+    let prompt = build_summary_prompt(messages_content);
+
+    // Get executor configuration
+    let executor_profile_id = ExecutorProfileId::new(base_agent);
+    let mut executor = ExecutorConfigs::get_cached()
+        .get_coding_agent_or_default(&executor_profile_id);
+    executor.use_approvals(Arc::new(NoopExecutorApprovalService::default()));
+
+    // Set up execution environment
+    let repo_context = RepoContext::new(workspace_path.to_path_buf(), Vec::new());
+    let env = ExecutionEnv::new(repo_context, false, String::new());
+
+    // Spawn the executor
+    let mut spawned = executor
+        .spawn(workspace_path, &prompt, &env)
+        .await
+        .map_err(|e| ChatServiceError::Io(std::io::Error::other(e.to_string())))?;
+
+    // Collect output using MsgStore
+    let msg_store = Arc::new(MsgStore::new());
+
+    // Set up log forwarders
+    if let Some(stdout) = spawned.child.inner().stdout.take() {
+        let store_clone = msg_store.clone();
+        let reader = ReaderStream::new(stdout);
+        tokio::spawn(async move {
+            let mut reader = reader;
+            while let Some(chunk) = reader.next().await {
+                if let Ok(bytes) = chunk {
+                    store_clone.push(LogMsg::Stdout(String::from_utf8_lossy(&bytes).to_string()));
+                }
+            }
+        });
+    }
+
+    if let Some(stderr) = spawned.child.inner().stderr.take() {
+        let store_clone = msg_store.clone();
+        let reader = ReaderStream::new(stderr);
+        tokio::spawn(async move {
+            let mut reader = reader;
+            while let Some(chunk) = reader.next().await {
+                if let Ok(bytes) = chunk {
+                    store_clone.push(LogMsg::Stderr(String::from_utf8_lossy(&bytes).to_string()));
+                }
+            }
+        });
+    }
+
+    // Normalize logs to extract assistant messages
+    executor.normalize_logs(msg_store.clone(), workspace_path);
+
+    // Wait for process to complete with timeout
+    let timeout_duration = Duration::from_secs(60);
+    let exit_status = tokio::time::timeout(
+        timeout_duration,
+        spawned.child.wait(),
+    )
+    .await
+    .map_err(|_| ChatServiceError::Io(std::io::Error::other("LLM summarization timed out")))?
+    .map_err(|e| ChatServiceError::Io(e))?;
+
+    if !exit_status.success() {
+        return Err(ChatServiceError::Io(std::io::Error::other(
+            format!("LLM process exited with status: {}", exit_status),
+        )));
+    }
+
+    // Give a moment for logs to be processed
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Extract the last assistant message from the history
+    let history = msg_store.get_history();
+    for msg in history.iter().rev() {
+        if let LogMsg::JsonPatch(patch) = msg {
+            if let Some((_, entry)) = extract_normalized_entry_from_patch(patch) {
+                if matches!(entry.entry_type, NormalizedEntryType::AssistantMessage) {
+                    let content = entry.content.trim();
+                    if !content.is_empty() {
+                        // Truncate if too long
+                        let summary = if content.len() > 500 {
+                            format!("{}...", &content[..500])
+                        } else {
+                            content.to_string()
+                        };
+                        return Ok(summary);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(ChatServiceError::Validation("No summary generated from LLM".to_string()))
+}
+
+/// Try to get cached summary or return None
+fn get_cached_summary(message_ids: &[Uuid]) -> Option<String> {
+    let cache_key = summary_cache_key(message_ids);
+    SUMMARY_CACHE.get(&cache_key)
+}
+
+/// Build compacted context with LLM-based compression for older messages.
+///
+/// Algorithm:
+/// - If total messages > 20, take the most recent 20 as context window
+/// - Compress the oldest 5 messages of this window into 1 summary message via LLM
+/// - Final context = 1 summary + 15 recent messages = 16 messages
+///
+/// # Arguments
+/// * `pool` - Database connection pool
+/// * `session_id` - Chat session ID
+/// * `runner_type` - Runner type string for the agent (e.g., "CLAUDE_CODE", "CODEX")
+/// * `workspace_path` - Path to workspace for running LLM
+///
+/// # Returns
+/// CompactedContext with messages and JSONL string
+pub async fn build_compacted_context(
+    pool: &SqlitePool,
+    session_id: Uuid,
+    _runner_type: Option<&str>,
+    _workspace_path: Option<&std::path::Path>,
+) -> Result<CompactedContext, ChatServiceError> {
+    // Fetch all messages for the session
+    let all_messages = ChatMessage::find_by_session_id(pool, session_id, None).await?;
+    let agents = ChatAgent::find_all(pool).await?;
+    let agent_map: HashMap<Uuid, String> =
+        agents.into_iter().map(|agent| (agent.id, agent.name)).collect();
+
+    let total_count = all_messages.len();
+
+    // If total messages <= threshold, return all messages without compression
+    if total_count <= LLM_COMPRESSION_THRESHOLD {
+        let structured = build_structured_messages_internal(&all_messages, &agent_map, false);
+        let jsonl = structured
+            .iter()
+            .filter_map(|msg| serde_json::to_string(msg).ok())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        return Ok(CompactedContext {
+            messages: structured,
+            jsonl,
+        });
+    }
+
+    // Take the most recent CONTEXT_WINDOW_SIZE messages as context window
+    let context_window: Vec<_> = all_messages
+        .into_iter()
+        .skip(total_count.saturating_sub(CONTEXT_WINDOW_SIZE))
+        .collect();
+
+    // Split into messages to compress (oldest 5) and messages to keep (remaining 15)
+    // But first, filter out any messages that are already summaries (sender_type=System with compression meta)
+    // This shouldn't happen if summaries aren't persisted to DB, but we check for robustness
+    let split_point = LLM_COMPRESSION_BATCH_SIZE.min(context_window.len());
+    let (to_compress_raw, messages_to_keep) = context_window.split_at(split_point);
+
+    // Filter: skip messages that are already compressed summaries
+    let messages_to_compress: Vec<&ChatMessage> = to_compress_raw
+        .iter()
+        .filter(|m| {
+            // Check if this is a system message with compression meta (already a summary)
+            if m.sender_type == ChatSenderType::System {
+                if let Some(compression) = m.meta.0.get("compression") {
+                    if compression.as_str() == Some("llm") {
+                        tracing::debug!("Skipping already compressed message: {}", m.id);
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .collect();
+
+    // If no messages to compress (all were already summaries), return without new compression
+    if messages_to_compress.is_empty() {
+        let structured = build_structured_messages_internal(&context_window, &agent_map, false);
+        let jsonl = structured
+            .iter()
+            .filter_map(|msg| serde_json::to_string(msg).ok())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        return Ok(CompactedContext {
+            messages: structured,
+            jsonl,
+        });
+    }
+
+    // Convert Vec<&ChatMessage> to Vec<ChatMessage> for build_structured_messages_internal
+    let messages_to_compress_owned: Vec<ChatMessage> =
+        messages_to_compress.iter().map(|m| (*m).clone()).collect();
+
+    // Build structured messages for the ones to compress
+    let structured_to_compress =
+        build_structured_messages_internal(&messages_to_compress_owned, &agent_map, false);
+
+    // Extract message IDs for summary metadata
+    let compressed_ids: Vec<Uuid> = messages_to_compress.iter().map(|m| m.id).collect();
+
+    // Get earliest timestamp from compressed messages (messages_to_compress is now Vec<&ChatMessage>)
+    let earliest_created_at = messages_to_compress
+        .first()
+        .map(|m| m.created_at.to_rfc3339())
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+
+    // Try to get cached LLM summary first
+    let summary_text = if let Some(cached_summary) = get_cached_summary(&compressed_ids) {
+        tracing::debug!(session_id = %session_id, "Using cached LLM summary");
+        cached_summary
+    } else {
+        // No cache hit - spawn background LLM summarization for next time
+        // and use fallback for this request (non-blocking)
+        if let Some(workspace_path) = _workspace_path {
+            let pool_clone = pool.clone();
+            let workspace_path_buf = workspace_path.to_path_buf();
+            let compressed_ids_clone = compressed_ids.clone();
+            let structured_clone = structured_to_compress.clone();
+
+            // Spawn background task - this is fire-and-forget
+            generate_llm_summary_background(
+                pool_clone,
+                session_id,
+                compressed_ids_clone,
+                structured_clone,
+                workspace_path_buf,
+            )
+            .await;
+
+            tracing::debug!(
+                session_id = %session_id,
+                "LLM summary generation started in background, using fallback for now"
+            );
+        }
+
+        // Use fallback for immediate response
+        create_fallback_summary(&structured_to_compress)
+    };
+
+    // Create summary message
+    let summary_message = create_summary_message(&summary_text, compressed_ids, &earliest_created_at);
+
+    // Build structured messages for remaining messages
+    let structured_to_keep = build_structured_messages_internal(&messages_to_keep, &agent_map, false);
+
+    // Combine: summary + remaining messages
+    let mut final_messages = vec![summary_message];
+    final_messages.extend(structured_to_keep);
+
+    // Build JSONL
+    let jsonl = final_messages
+        .iter()
+        .filter_map(|msg| serde_json::to_string(msg).ok())
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+
+    Ok(CompactedContext {
+        messages: final_messages,
+        jsonl,
+    })
+}
+
+/// Internal helper to build structured messages without compression
+fn build_structured_messages_internal(
+    messages: &[ChatMessage],
+    agent_map: &HashMap<Uuid, String>,
+    apply_compression: bool,
+) -> Vec<Value> {
+    let message_count = messages.len();
+    let mut result = Vec::with_capacity(message_count);
+
+    for (idx, message) in messages.iter().enumerate() {
+        let sender_handle = message
+            .meta
+            .0
+            .get("sender_handle")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string());
+        let sender_name = message
+            .sender_id
+            .and_then(|id| agent_map.get(&id).cloned());
+        let sender_label = match message.sender_type {
+            ChatSenderType::User => sender_handle
+                .clone()
+                .unwrap_or_else(|| "user".to_string()),
+            ChatSenderType::Agent => sender_name
+                .clone()
+                .or_else(|| message.sender_id.map(|id| id.to_string()))
+                .unwrap_or_else(|| "agent".to_string()),
+            ChatSenderType::System => "system".to_string(),
+        };
+
+        let sender = serde_json::json!({
+            "type": message.sender_type,
+            "id": message.sender_id,
+            "handle": sender_handle,
+            "name": sender_name,
+            "label": sender_label,
+        });
+
+        // Determine if this message should be compressed (only if apply_compression is true)
+        let is_recent = !apply_compression || idx >= message_count.saturating_sub(RECENT_MESSAGES_FULL);
+
+        let content = if is_recent {
+            message.content.clone()
+        } else {
+            let original_len = message.content.chars().count();
+            let target_len = (original_len as f64 * COMPRESSION_TARGET_RATIO) as usize;
+            let max_chars = target_len.max(100).min(500);
+            compress_content(&message.content, max_chars)
+        };
+
+        let meta = if is_recent {
+            message.meta.0.clone()
+        } else {
+            let mut minimal_meta = serde_json::json!({});
+            if let Some(sender_info) = message.meta.0.get("sender") {
+                minimal_meta["sender"] = sender_info.clone();
+            }
+            minimal_meta
+        };
+
+        result.push(serde_json::json!({
+            "id": message.id,
+            "session_id": message.session_id,
+            "created_at": message.created_at,
+            "sender": sender,
+            "content": content,
+            "mentions": message.mentions.0,
+            "meta": meta,
+            "compressed": !is_recent,
+        }));
+    }
+
+    result
 }
 
 pub async fn export_session_archive(
