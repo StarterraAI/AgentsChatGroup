@@ -1482,14 +1482,24 @@ export const chatApi = {
   uploadChatAttachments: async (
     sessionId: string,
     files: File[],
-    senderHandle?: string
+    options?: {
+      senderHandle?: string;
+      content?: string;
+      referenceMessageId?: string;
+    }
   ): Promise<ChatMessage> => {
     const form = new FormData();
     files.forEach((file) => {
       form.append('file', file, file.name);
     });
-    if (senderHandle) {
-      form.append('sender_handle', senderHandle);
+    if (options?.senderHandle) {
+      form.append('sender_handle', options.senderHandle);
+    }
+    if (options?.content) {
+      form.append('content', options.content);
+    }
+    if (options?.referenceMessageId) {
+      form.append('reference_message_id', options.referenceMessageId);
     }
 
     const response = await fetch(

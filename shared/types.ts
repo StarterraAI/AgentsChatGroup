@@ -144,7 +144,7 @@ export type ChatRun = { id: string, session_id: string, session_agent_id: string
 
 export type ChatStreamEvent = { "type": "message_new", message: ChatMessage, } | { "type": "agent_delta", session_id: string, session_agent_id: string, agent_id: string, run_id: string, content: string, delta: boolean, is_final: boolean, } | { "type": "agent_state", session_agent_id: string, agent_id: string, state: ChatSessionAgentState, started_at: string | null, } | { "type": "mention_acknowledged", session_id: string, message_id: string, mentioned_agent: string, agent_id: string, status: MentionStatus, };
 
-export type MentionStatus = "running" | "completed" | "failed";
+export type MentionStatus = "received" | "running" | "completed" | "failed";
 
 export type Image = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
 
@@ -655,7 +655,7 @@ export type ActionType = { "action": "file_read", path: string, } | { "action": 
 
 export type TodoItem = { content: string, status: string, priority: string | null, };
 
-export type NormalizedEntryError = { "type": "setup_required" } | { "type": "other" };
+export type NormalizedEntryError = { "type": "setup_required" } | { "type": "quota_exceeded", provider: string | null, } | { "type": "rate_limit_exceeded", provider: string | null, } | { "type": "server_overloaded", provider: string | null, } | { "type": "authentication_failed", provider: string | null, } | { "type": "context_limit_exceeded", provider: string | null, } | { "type": "other" };
 
 export type ToolResult = { type: ToolResultValueType, 
 /**

@@ -1,0 +1,102 @@
+﻿---
+title: "Creating Tasks"
+description: "Learn how to create and manage tasks on your kanban board, including using templates, starting coding agents, and understanding task states"
+---
+
+<Frame>
+<img src="/images/vk-task-dialog.png" alt="Task creation interface showing Add Task button and form fields" />
+</Frame>
+
+After creating a project, add tasks by clicking the **plus (+) icon** in the top right of your project kanban page, or by using the keyboard shortcut **`c`**.
+
+You have two options when creating a task:
+
+- **Create Task**: Adds the task to your kanban board without starting a coding agent
+- **Create & Start**: Creates the task and immediately starts it with your default coding agent and current branch
+
+## Using Task Tags
+
+<Frame>
+<img src="/images/screenshot-task-tag-autocomplete.png" alt="Task tag autocomplete dropdown showing available tags after typing @ symbol" />
+</Frame>
+
+When adding a task, you can insert reusable text snippets using task tags:
+
+1. Type `@` in the task description or follow-up message
+2. Start typing the tag name to filter available tags
+3. Select a tag from the dropdown to insert its content
+
+<Note>
+Task tags save time by providing reusable text snippets for common task structures. Learn more in the [Task Tags](/configuration-customisation/creating-task-tags) guide.
+</Note>
+
+## Starting an Existing Task
+
+<Frame>
+<img src="/images/vk-new-task-attempt.png" alt="Task attempt creation dialog showing agent profile and variant selection options" />
+</Frame>
+
+When you open a task that hasn't been attempted yet, you'll see the task title, description, and a list of attempts showing "no attempts yet". Click the **plus (+) button** to create a task attempt and configure:
+
+- **Agent profile**: Choose from available agents (e.g., CLAUDE_CODE, GEMINI, CODEX). Your default configuration from Settings is pre-selected.
+- **Variant**: If your selected agent has variants, pick the appropriate one (e.g., DEFAULT, PLAN).
+- **Base branch**: Specify which branch the agent should work from. Your current branch is selected by default.
+
+<Tip>
+Use **Create & Start** to add the task and immediately create a task attempt with your default settings in one action.
+</Tip>
+
+<Note>
+To monitor your task as it executes, see [Monitoring Task Execution](/core-features/monitoring-task-execution). To understand when you might need multiple attempts, see [New Task Attempts](/core-features/new-task-attempts).
+</Note>
+
+## Creating Tasks via MCP Clients
+
+<Warning>
+This is not the typical method for creating tasks but can be valuable for bulk task creation, migrating from other systems, using an AI assistant with extra project context, or for coding agents that want to create new tasks.
+</Warning>
+
+Tasks can also be created programmatically using coding agents or MCP (Model Context Protocol) clients such as Claude Desktop or Raycast. This approach is particularly useful for:
+
+- **Bulk task creation** based on existing data or project specifications
+- **Migration from other systems** like Linear, GitHub Issues, or Jira
+- **Automated task generation** from project plans or requirements documents
+
+<Tip>
+For detailed setup instructions and examples, see the [agent-chatgroup MCP Server](/integrations/agent-chatgroup-mcp-server) documentation.
+</Tip>
+
+### Example MCP Task Creation
+
+Once configured with an MCP client, you can create multiple tasks from a project description:
+
+```
+I need to implement user authentication with:
+- Email/password registration
+- Login with session management  
+- Password reset functionality
+- Email verification
+- Protected route middleware
+
+Please create individual tasks for each component.
+```
+
+The MCP client will automatically generate structured tasks in your agent-chatgroup project based on this description.
+
+## Understanding Task Columns
+
+Tasks begin in the "To do" column and move automatically based on their progress:
+
+| Action | Column |
+|--------|---------|
+| Task created | To do |
+| Task attempt started | In Progress |
+| Task attempt completed (success or failure) | In Review |
+| Task attempt merged | Done |
+| PR merged on GitHub | Done |
+
+<Info>
+You can manually drag tasks between columns, but this won't trigger any functionality. Task movement is primarily driven by coding agent actions and GitHub integration (which polls every 60 seconds).
+</Info>
+
+

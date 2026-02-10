@@ -1,10 +1,7 @@
 import { useMemo, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useUserContext } from '@/contexts/remote/UserContext';
 import { useActions } from '@/contexts/ActionsContext';
-import { useUserOrganizations } from '@/hooks/useUserOrganizations';
-import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { Navbar } from '../views/Navbar';
 import { RemoteIssueLink } from './RemoteIssueLink';
 import {
@@ -63,12 +60,8 @@ function filterNavbarItems(
 
 export function NavbarContainer() {
   const { executeAction } = useActions();
-  const { workspace: selectedWorkspace, isCreateMode } = useWorkspaceContext();
+  const { workspace: selectedWorkspace } = useWorkspaceContext();
   const { workspaces } = useUserContext();
-  const location = useLocation();
-  const isOnProjectPage = location.pathname.startsWith('/projects/');
-  const isOnChatPage = location.pathname.startsWith('/chat');
-
   // Find remote workspace linked to current local workspace
   const linkedRemoteWorkspace = useMemo(() => {
     if (!selectedWorkspace?.id) return null;
@@ -77,11 +70,6 @@ export function NavbarContainer() {
       null
     );
   }, [workspaces, selectedWorkspace?.id]);
-
-  const { data: orgsData } = useUserOrganizations();
-  const selectedOrgId = useOrganizationStore((s) => s.selectedOrgId);
-  const orgName =
-    orgsData?.organizations.find((o) => o.id === selectedOrgId)?.name ?? '';
 
   // Get action visibility context (includes all state for visibility/active/enabled)
   const actionCtx = useActionVisibilityContext();
@@ -117,15 +105,8 @@ export function NavbarContainer() {
     [actionCtx, isMigratePage]
   );
 
-  const navbarTitle = isCreateMode
-    ? 'Create Workspace'
-    : isOnChatPage
-      ? 'Group Chat'
-    : isMigratePage
-      ? 'Migrate'
-      : isOnProjectPage
-        ? orgName
-        : selectedWorkspace?.branch;
+  // Using consistent application title instead of dynamic navbar titles
+  const navbarTitle = 'AgentsChatGroup'; // Fixed title as per branding requirements
 
   return (
     <Navbar

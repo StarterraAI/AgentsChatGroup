@@ -20,6 +20,16 @@ use tokio_util::io::ReaderStream;
 
 use crate::{DeploymentImpl, error::ApiError};
 
+const ALLOWED_TEXT_EXTENSIONS: &[&str] = &[
+    ".txt", ".csv", ".md", ".json", ".xml", ".yaml", ".yml", ".html", ".htm",
+    ".css", ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h",
+    ".hpp", ".rb", ".php", ".go", ".rs", ".sql", ".sh", ".bash", ".svg",
+];
+
+const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &[
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+];
+
 #[derive(Debug, Deserialize, TS)]
 pub struct ChatMessageListQuery {
     pub limit: Option<i64>,
@@ -58,6 +68,19 @@ fn attachment_kind(mime: Option<&str>) -> String {
         }
     }
     "file".to_string()
+}
+
+fn is_allowed_attachment(filename: &str, mime: Option<&str>) -> bool {
+    if let Some(mime) = mime {
+        if mime.starts_with("text/") || mime.starts_with("image/") {
+            return true;
+        }
+    }
+    let lower = filename.to_ascii_lowercase();
+    ALLOWED_TEXT_EXTENSIONS
+        .iter()
+        .chain(ALLOWED_IMAGE_EXTENSIONS.iter())
+        .any(|ext| lower.ends_with(ext))
 }
 
 fn attachment_storage_dir(session_id: Uuid, message_id: Uuid) -> PathBuf {
@@ -120,6 +143,7 @@ pub async fn upload_message_attachments(
     let message_id = Uuid::new_v4();
     let mut content: Option<String> = None;
     let mut sender_handle: Option<String> = None;
+    let mut reference_message_id: Option<Uuid> = None;
     let mut attachments: Vec<ChatAttachmentMeta> = Vec::new();
 
     while let Some(field) = multipart.next_field().await? {
@@ -136,12 +160,23 @@ pub async fn upload_message_attachments(
                     sender_handle = Some(text);
                 }
             }
+            Some("reference_message_id") => {
+                let text = field.text().await?;
+                if let Ok(parsed) = Uuid::parse_str(text.trim()) {
+                    reference_message_id = Some(parsed);
+                }
+            }
             _ => {
                 let filename = field.file_name().map(|name| name.to_string());
                 let mime_type = field.content_type().map(|value| value.to_string());
                 let Some(filename) = filename else {
                     continue;
                 };
+                if !is_allowed_attachment(&filename, mime_type.as_deref()) {
+                    return Err(ApiError::BadRequest(
+                        "Only text files and images are allowed.".to_string(),
+                    ));
+                }
                 let data = field.bytes().await?;
                 if data.is_empty() {
                     continue;
@@ -191,6 +226,9 @@ pub async fn upload_message_attachments(
     if let Some(handle) = sender_handle {
         meta["sender_handle"] = serde_json::json!(handle);
     }
+    if let Some(reference_id) = reference_message_id {
+        meta["reference"] = serde_json::json!({ "message_id": reference_id });
+    }
 
     let message = services::services::chat::create_message_with_id(
         &deployment.db().pool,
@@ -211,7 +249,7 @@ pub async fn upload_message_attachments(
 pub async fn serve_message_attachment(
     Extension(session): Extension<ChatSession>,
     State(deployment): State<DeploymentImpl>,
-    Path((message_id, attachment_id)): Path<(Uuid, Uuid)>,
+    Path((_session_id, message_id, attachment_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<Response, ApiError> {
     let message = ChatMessage::find_by_id(&deployment.db().pool, message_id)
         .await?

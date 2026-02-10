@@ -15,6 +15,7 @@ import {
   PencilSimpleIcon,
   PaperclipIcon,
   PaperPlaneRightIcon,
+  PaperPlaneTiltIcon,
   PlusIcon,
   UsersIcon,
   ArrowsOutSimpleIcon,
@@ -24,6 +25,7 @@ import {
   TrashIcon,
   CheckSquareIcon,
   SquareIcon,
+  EyeIcon,
 } from '@phosphor-icons/react';
 import {
   ChatMessage,
@@ -34,6 +36,7 @@ import {
   type AvailabilityInfo,
   type JsonValue,
 } from 'shared/types';
+import type { ChatAttachment } from './chat/types';
 import { ApiError, chatApi, configApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -89,6 +92,48 @@ const mentionStatusPriority: Record<MentionStatus, number> = {
   completed: 2,
   failed: 2,
 };
+
+const allowedAttachmentExtensions = [
+  '.txt',
+  '.csv',
+  '.md',
+  '.json',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.html',
+  '.htm',
+  '.css',
+  '.js',
+  '.ts',
+  '.jsx',
+  '.tsx',
+  '.py',
+  '.java',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.rb',
+  '.php',
+  '.go',
+  '.rs',
+  '.sql',
+  '.sh',
+  '.bash',
+  '.svg',
+];
+
+const isTextAttachment = (file: File) =>
+  file.type.startsWith('text/') ||
+  allowedAttachmentExtensions.some((ext) =>
+    file.name.toLowerCase().endsWith(ext)
+  );
+
+const isImageAttachment = (file: File) => file.type.startsWith('image/');
+
+const isAllowedAttachment = (file: File) =>
+  isTextAttachment(file) || isImageAttachment(file);
 
 const coerceMentionStatus = (value: unknown): MentionStatus | null => {
   if (
@@ -232,6 +277,8 @@ export function ChatSessions() {
   // Local state
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [previewFile, setPreviewFile] = useState<{file: File | null, content: string | null}>({file: null, content: null});
   const [agentAvailability, setAgentAvailability] = useState<
     Record<string, AvailabilityInfo | null>
   >({});
@@ -528,7 +575,9 @@ export function ChatSessions() {
   const canSend =
     !!activeSessionId &&
     !isArchived &&
-    (draft.trim().length > 0 || selectedMentions.length > 0) &&
+    (draft.trim().length > 0 ||
+      selectedMentions.length > 0 ||
+      attachedFiles.length > 0) &&
     !sendMessage.isPending &&
     !isUploadingAttachments;
 
@@ -730,7 +779,9 @@ export function ChatSessions() {
         ? mentionsToInject.map((name) => `@${name}`).join(' ')
         : '';
     const content = [mentionPrefix, trimmed].filter(Boolean).join(' ').trim();
-    if (!content) return;
+
+    // If there are no content and no files, exit early
+    if (!content && attachedFiles.length === 0) return;
 
     // Check if any mentioned agent is currently running
     const allMentions = new Set([...contentMentions, ...selectedMentions]);
@@ -766,32 +817,62 @@ export function ChatSessions() {
     };
 
     try {
-      await sendMessage.mutateAsync({
-        sessionId: activeSessionId,
-        content,
-        meta,
-      });
+      // If there are attached files, upload them with the message content
+      if (attachedFiles.length > 0) {
+        await handleAttachmentUpload(attachedFiles, {
+          content: content || undefined,
+          referenceMessageId: replyToMessage?.id,
+        });
+      } else {
+        // Send content only if there are no files
+        await sendMessage.mutateAsync({
+          sessionId: activeSessionId,
+          content,
+          meta,
+        });
+      }
+
       resetInput();
       inputRef.current?.focus();
+      // Clear attached files after sending
+      setAttachedFiles([]);
     } catch (error) {
       console.warn('Failed to send chat message', error);
     }
   };
 
-  const handleAttachmentUpload = async (files: FileList | File[]) => {
+  const handleAttachmentUpload = async (
+    files: FileList | File[],
+    options?: { content?: string; referenceMessageId?: string }
+  ) => {
     if (!activeSessionId || isArchived) return;
     const list = Array.from(files);
     if (list.length === 0) return;
+
+    // Filter for allowed file types (text and images) only
+    const allowedFiles = list.filter((file) => isAllowedAttachment(file));
+
+    if (allowedFiles.length === 0) {
+      setAttachmentError('Only text files and images are allowed.');
+      return;
+    }
+
     setIsUploadingAttachments(true);
     setAttachmentError(null);
     try {
       const message = await chatApi.uploadChatAttachments(
         activeSessionId,
-        list,
-        senderHandle
+        allowedFiles,
+        {
+          senderHandle,
+          content: options?.content,
+          referenceMessageId: options?.referenceMessageId,
+        }
       );
       upsertMessage(message);
       queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
+      // Clear attached files after successful upload
+      setAttachedFiles([]);
     } catch (error) {
       console.warn('Failed to upload attachments', error);
       setAttachmentError('Unable to upload attachments.');
@@ -802,9 +883,89 @@ export function ChatSessions() {
 
   const handleAttachmentInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      handleAttachmentUpload(event.target.files);
+      const files = Array.from(event.target.files);
+      // Filter files by type before adding to state
+      const allowedFiles = files.filter((file) => isAllowedAttachment(file));
+
+      if (allowedFiles.length !== files.length) {
+        const rejectedCount = files.length - allowedFiles.length;
+        setAttachmentError(`Some files were rejected (${rejectedCount}). Only text files and images are allowed.`);
+      }
+
+      // Add allowed files to the attachedFiles state
+      setAttachedFiles(prev => [...prev, ...allowedFiles]);
     }
     event.target.value = '';
+  };
+
+  const removeAttachedFile = (fileName: string, fileSize: number) => {
+    setAttachedFiles(prev => prev.filter(file => !(file.name === fileName && file.size === fileSize)));
+  };
+
+  const clearAttachedFiles = () => {
+    setAttachedFiles([]);
+  };
+
+  // Function to download and add an attachment to the current file list
+  const addAttachmentAsFile = async (messageId: string, attachment: ChatAttachment) => {
+    if (!activeSessionId || !attachment.id) return;
+
+    try {
+      // Get the attachment URL
+      const attachmentUrl = chatApi.getChatAttachmentUrl(
+        activeSessionId,
+        messageId,
+        attachment.id
+      );
+
+      // Fetch the attachment
+      const response = await fetch(attachmentUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download attachment: ${response.statusText}`);
+      }
+
+      // Convert the response to a blob
+      const blob = await response.blob();
+
+      // Create a File object from the blob
+      const file = new File([blob], attachment.name, { type: blob.type });
+
+      // Add the file to attachedFiles
+      setAttachedFiles(prev => [...prev, file]);
+    } catch (error) {
+      console.error('Error downloading attachment:', error);
+      setAttachmentError('Could not download attachment.');
+    }
+  };
+
+  // Function to preview a file
+  const previewAttachedFile = async (file: File) => {
+    try {
+      // For text files, read the content
+      if (isTextAttachment(file)) {
+        const content = await file.text();
+        setPreviewFile({file, content});
+      }
+      // For image files, create a data URL
+      else if (isImageAttachment(file)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setPreviewFile({file, content: e.target?.result as string});
+        };
+        reader.readAsDataURL(file);
+      }
+      // For other file types, we could show file info or a preview placeholder
+      else {
+        setPreviewFile({file, content: null});
+      }
+    } catch (error) {
+      console.error('Error previewing file:', error);
+      setAttachmentError('Could not preview file.');
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewFile({file: null, content: null});
   };
 
   const handlePromptFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1706,14 +1867,28 @@ export function ChatSessions() {
                               <span className="font-ibm-plex-mono break-all">
                                 {attachment.name}
                               </span>
-                              <a
-                                className="text-brand hover:text-brand-hover"
-                                href={attachmentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Open
-                              </a>
+                              <div className="flex gap-half">
+                                <button
+                                  type="button"
+                                  className="text-brand hover:text-brand-hover px-1 py-0.5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Download and add this attachment to the attached files
+                                    addAttachmentAsFile(message.id, attachment);
+                                  }}
+                                  title="Send to agent"
+                                >
+                                  <PaperPlaneTiltIcon className="size-icon-sm" />
+                                </button>
+                                <a
+                                  className="text-brand hover:text-brand-hover"
+                                  href={attachmentUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open
+                                </a>
+                              </div>
                             </div>
                             {attachment.size_bytes && (
                               <div className="text-xs text-low">
@@ -1959,6 +2134,47 @@ export function ChatSessions() {
             </div>
           )}
 
+          {/* Display attached files */}
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-2 border border-border rounded-sm bg-secondary/40">
+              {attachedFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="flex items-center gap-1 bg-panel border border-border rounded px-2 py-1 text-xs"
+                >
+                  <PaperclipIcon className="size-icon-2xs text-low" />
+                  <span className="max-w-[120px] truncate" title={file.name}>
+                    {file.name}
+                  </span>
+                  {isAllowedAttachment(file) && (
+                    <button
+                      type="button"
+                      className="text-low hover:text-normal"
+                      onClick={() => previewAttachedFile(file)}
+                      title="Preview"
+                    >
+                      <EyeIcon className="size-icon-2xs" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="text-low hover:text-normal"
+                    onClick={() => removeAttachedFile(file.name, file.size)}
+                  >
+                    <XIcon className="size-icon-2xs" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="text-xs text-brand hover:text-brand-hover ml-1"
+                onClick={clearAttachedFiles}
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
           {attachmentError && (
             <div className="text-xs text-error">{attachmentError}</div>
           )}
@@ -2000,15 +2216,22 @@ export function ChatSessions() {
                     type="button"
                     onClick={() => handleMentionSelect(agent.name)}
                     className={cn(
-                      'w-full px-base py-half text-left text-sm text-normal',
+                      'w-full px-base py-half text-left text-sm',
                       'flex items-center justify-between',
                       index === highlightedMentionIndex
-                        ? 'bg-secondary'
-                        : 'hover:bg-secondary'
+                        ? 'bg-brand-secondary text-on-brand'
+                        : 'text-normal hover:bg-secondary'
                     )}
                   >
                     <span>@{agent.name}</span>
-                    <CaretRightIcon className="size-icon-xs text-low" />
+                    <CaretRightIcon
+                      className={cn(
+                        'size-icon-xs',
+                        index === highlightedMentionIndex
+                          ? 'text-on-brand'
+                          : 'text-low'
+                      )}
+                    />
                   </button>
                 ))}
               </div>
@@ -2696,8 +2919,55 @@ export function ChatSessions() {
             }}
             disabled={isConfirmLoading}
           />
-        </DialogFooter>
+          </DialogFooter>
       </Dialog>
+
+      {/* File Preview Modal */}
+      {previewFile.file && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-4xl bg-panel border border-border rounded-sm shadow-lg max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-medium text-normal truncate max-w-[70%]" title={previewFile.file.name}>
+                Preview: {previewFile.file.name}
+              </h3>
+              <button
+                type="button"
+                className="text-low hover:text-normal"
+                onClick={closePreview}
+              >
+                <XIcon className="size-icon-sm" />
+              </button>
+            </div>
+
+            <div className="overflow-auto flex-1 p-4">
+              {previewFile.content ? (
+                previewFile.file.type.startsWith('image/') ? (
+                  <img
+                    src={previewFile.content}
+                    alt={previewFile.file.name}
+                    className="max-w-full max-h-[70vh] object-contain"
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-normal bg-secondary p-4 rounded-sm overflow-auto max-h-[60vh]">
+                    {previewFile.content}
+                  </pre>
+                )
+              ) : (
+                <div className="flex items-center justify-center h-64 text-low">
+                  Preview not available for this file type
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-border flex justify-end">
+              <PrimaryButton
+                value="Close"
+                onClick={closePreview}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

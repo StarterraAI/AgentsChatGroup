@@ -1,0 +1,73 @@
+﻿---
+title: "Install & Run agent-chatgroup"
+description: "Complete installation guide for agent-chatgroup on macOS, Linux, and Windows"
+sidebarTitle: "Installation"
+---
+
+## Supported Systems
+
+We build and test agent-chatgroup on the following systems:
+
+- macOS (Intel and Apple Silicon)
+- Linux
+- Windows
+
+## Prerequisites
+
+Before installing agent-chatgroup, ensure you have:
+
+- **Node.js**: Latest LTS version recommended
+- **Coding agent authentication**: Authenticate with your preferred coding agents outside of agent-chatgroup
+
+## Safety Notice
+
+<Warning>
+agent-chatgroup runs AI agents with --dangerously-skip-permissions/--yolo flags by default so they can work autonomously without constant approval prompts. Each task runs in an isolated git worktree, preventing agents from interfering with each other.
+Agents can still perform system-level actions, so review their work and keep backups.
+</Warning>
+
+## Installation & Setup
+
+<Steps>
+<Step title="Authenticate with a coding agent">
+  Before launching agent-chatgroup, ensure you're authenticated with at least one [supported coding agent](/supported-coding-agents). Follow the installation and authentication instructions for your preferred agent.
+</Step>
+
+<Step title="Install and launch agent-chatgroup">
+  Open a terminal and run:
+
+  ```bash
+  npx agent-chatgroup
+  ```
+
+  <Check>
+  The application will bind to a random free port, print the URL in the terminal, and automatically open in your default browser.
+  </Check>
+</Step>
+
+<Step title="Complete initial setup">
+  Complete the setup dialogs to configure your coding agent and editor preferences. GitHub integration relies on the GitHub CLI and is configured when needed.
+</Step>
+
+<Step title="Create your first project">
+  You'll land on the Projects page, populated with your three most recently active git projects if automatically discovered. Click "Create project" to add more projects.
+</Step>
+
+<Step title="Add tasks">
+  Start tracking your work by [creating tasks](/core-features/creating-tasks) within your project.
+</Step>
+
+<Step title="Optional: GitHub integration">
+  agent-chatgroup uses the [GitHub CLI](https://cli.github.com/) for creating pull requests. Ensure `gh` is installed and authenticated on your system, or follow the setup prompts when creating your first pull request.
+</Step>
+
+<Step title="Optional: Set up MCP integration">
+  Streamline task creation with coding agents by [setting up MCP integration](/integrations/agent-chatgroup-mcp-server).
+</Step>
+</Steps>
+
+<Tip>
+To use a fixed port, specify the `PORT` environment variable: `PORT=8080 npx agent-chatgroup`
+</Tip>
+
+

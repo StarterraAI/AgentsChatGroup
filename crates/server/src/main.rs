@@ -1,8 +1,10 @@
 ﻿use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
+use executors::profile::ExecutorConfigs;
 use server::{DeploymentImpl, routes};
 use services::services::container::ContainerService;
 use sqlx::Error as SqlxError;
+use std::time::Duration;
 use strip_ansi_escapes::strip;
 use thiserror::Error;
 use tracing_subscriber::{EnvFilter, prelude::*};
@@ -70,6 +72,15 @@ async fn main() -> Result<(), AgentChatgroupError> {
     deployment
         .track_if_analytics_allowed("session_start", serde_json::json!({}))
         .await;
+    // Keep executor profiles in sync with on-disk configuration.
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(5 * 60));
+        loop {
+            ticker.tick().await;
+            ExecutorConfigs::reload();
+            tracing::debug!("Reloaded executor profiles cache");
+        }
+    });
     // Pre-warm file search cache for most active projects
     let deployment_for_cache = deployment.clone();
     tokio::spawn(async move {

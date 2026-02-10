@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO chat_session_agents (id, session_id, agent_id, workspace_path)\n               VALUES ($1, $2, $3, $4)\n               RETURNING id as \"id!: Uuid\",\n                         session_id as \"session_id!: Uuid\",\n                         agent_id as \"agent_id!: Uuid\",\n                         state as \"state!: ChatSessionAgentState\",\n                         workspace_path,\n                         pty_session_key,\n                         agent_session_id,\n                         agent_message_id,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "INSERT INTO chat_session_agents (id, session_id, agent_id, workspace_path, state)\n               VALUES ($1, $2, $3, $4, 'idle')\n               RETURNING id as \"id!: Uuid\",\n                         session_id as \"session_id!: Uuid\",\n                         agent_id as \"agent_id!: Uuid\",\n                         state as \"state!: ChatSessionAgentState\",\n                         workspace_path,\n                         pty_session_key,\n                         agent_session_id,\n                         agent_message_id,\n                         created_at as \"created_at!: DateTime<Utc>\",\n                         updated_at as \"updated_at!: DateTime<Utc>\"",
   "describe": {
     "columns": [
       {
@@ -70,5 +70,5 @@
       false
     ]
   },
-  "hash": "98f340b88c1c4c7442d562b0341681eb4fadc294b91197c6bea7fc0911412341"
+  "hash": "97195266e1efd593466b3800caf47a15d0a349f68fda235a5200299dd19be431"
 }

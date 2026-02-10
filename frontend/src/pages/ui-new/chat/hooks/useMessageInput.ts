@@ -58,6 +58,9 @@ export function useMessageInput(
       const spacer = match[1] ?? '';
       return `${prefix}${spacer}@${name} `;
     });
+    setSelectedMentions((prev) =>
+      prev.includes(name) ? prev : [...prev, name]
+    );
     setMentionQuery(null);
     inputRef.current?.focus();
   }, []);

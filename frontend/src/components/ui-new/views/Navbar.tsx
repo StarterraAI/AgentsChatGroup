@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Icon } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '../primitives/Tooltip';
@@ -91,6 +92,8 @@ export function Navbar({
   onExecuteAction,
   className,
 }: NavbarProps) {
+  const navigate = useNavigate();
+
   const renderItem = (item: NavbarItem, key: string) => {
     // Render divider
     if (isDivider(item)) {
@@ -132,8 +135,10 @@ export function Navbar({
         className
       )}
     >
-      {/* Left - Archive & Old UI Link + optional slot */}
-      <div className="flex-1 flex items-center gap-base">
+      {/* Left - Title + Archive & Old UI Link + optional slot */}
+      <div className="flex items-center gap-base flex-1">
+        <span className="text-lg font-semibold text-normal">{workspaceTitle}</span>
+
         {leftItems.map((item, index) =>
           renderItem(
             item,
@@ -143,13 +148,8 @@ export function Navbar({
         {leftSlot}
       </div>
 
-      {/* Center - Workspace Title */}
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-base text-low truncate">{workspaceTitle}</p>
-      </div>
-
-      {/* Right - Sync Error Indicator + Diff Controls + Panel Toggles (dividers inline) */}
-      <div className="flex-1 flex items-center justify-end gap-base">
+      {/* Right - Brand Logo + Sync Error Indicator + Diff Controls + Panel Toggles (dividers inline) */}
+      <div className="flex items-center justify-end gap-base">
         <SyncErrorIndicator />
         {rightItems.map((item, index) =>
           renderItem(
@@ -157,6 +157,22 @@ export function Navbar({
             `right-${isDivider(item) ? 'divider' : item.id}-${index}`
           )
         )}
+        {/* Brand logo with click functionality */}
+        <button
+          type="button"
+          className="flex items-center"
+          onClick={() => {
+            // Navigate to the homepage when the logo is clicked
+            navigate('/');
+          }}
+          title="Go to home"
+        >
+          <img
+            src="/agent-chatgroup-logo.svg"
+            alt="AgentsChatGroup"
+            className="h-8 w-8"
+          />
+        </button>
       </div>
     </nav>
   );

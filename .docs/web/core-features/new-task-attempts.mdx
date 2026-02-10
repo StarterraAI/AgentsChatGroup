@@ -1,0 +1,62 @@
+---
+title: "New Task Attempts"
+description: "Understand when and why to create multiple task attempts for fresh restarts with different configurations."
+sidebarTitle: "New Task Attempts"
+---
+
+<Frame>
+<img src="/images/vk-create-new-attempt.png" alt="Create new task attempt dialog showing configuration options" />
+</Frame>
+
+A task attempt represents a single session with a coding agent against a task. Most tasks only need one attempt, but you may need additional attempts for fresh restarts.
+
+## When to Create New Task Attempts
+
+Create a new task attempt when you want to:
+
+- **Start from scratch** with a different approach after an unsuccessful attempt
+- **Try a different coding agent** (e.g., switching from Claude to Codex)
+- **Use a different agent profile or variant** for specialised behaviour
+- **Work from a different base branch** to incorporate recent changes
+- **Reset the conversation context** for a completely fresh start
+
+<Tip>
+Most users will only need one attempt per task. Only create additional attempts if the first approach didn't work as expected.
+</Tip>
+
+## Creating Additional Attempts
+
+To create a new task attempt for an existing task:
+
+<Steps>
+<Step title="Navigate to the task">
+  Open the task that needs a fresh attempt.
+</Step>
+
+<Step title="Click Create New Attempt">
+  Click the triple dot icon in the top right of the task, then select **Create New Attempt**.
+</Step>
+
+<Step title="Configure the attempt">
+  Choose your agent profile, variant, and base branch. These can be different from previous attempts.
+</Step>
+
+<Step title="Start execution">
+  Click **Create Attempt** to begin a fresh execution with the new configuration.
+</Step>
+</Steps>
+
+## Impact on Subtasks
+
+<Warning>
+Creating new task attempts affects subtasks. Subtasks are linked to specific task attempts, not tasks themselves.
+</Warning>
+
+When you create a new task attempt:
+
+- **Existing subtasks** remain linked to their original parent attempt
+- **New subtasks** created from the new attempt will use the new attempt's branch as their base
+
+<Info>
+For more details about how subtasks work with task attempts, see [Creating Subtasks](/core-features/subtasks).
+</Info>

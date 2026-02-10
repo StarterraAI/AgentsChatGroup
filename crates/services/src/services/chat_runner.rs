@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Component, PathBuf},
     str::FromStr,
     sync::{
@@ -76,10 +76,27 @@ struct ReferenceContext {
     attachments: Vec<ReferenceAttachment>,
 }
 
+struct MessageAttachmentContext {
+    message_id: Uuid,
+    attachments: Vec<ReferenceAttachment>,
+}
+
+#[derive(Debug, Serialize)]
+struct SessionAgentSummary {
+    session_agent_id: Uuid,
+    agent_id: Uuid,
+    name: String,
+    runner_type: String,
+    state: ChatSessionAgentState,
+    system_prompt: Option<String>,
+    tools_enabled: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum MentionStatus {
+    Received,  // Message queued, waiting for agent to be available
     Running,
     Completed,
     Failed,
@@ -130,12 +147,24 @@ pub enum ChatRunnerError {
     ChatService(#[from] ChatServiceError),
 }
 
+/// Pending message to be processed by an agent
+#[derive(Clone, Debug)]
+struct PendingMessage {
+    session_id: Uuid,
+    agent_id: Uuid,
+    agent_name: String,
+    message: ChatMessage,
+}
+
 #[derive(Clone)]
 pub struct ChatRunner {
     db: DBService,
     streams: Arc<DashMap<Uuid, broadcast::Sender<ChatStreamEvent>>>,
     // Store cancellation tokens for graceful shutdown, key = session_agent_id
     cancellation_tokens: Arc<DashMap<Uuid, CancellationToken>>,
+    // Message queue for each session_agent, keyed by session_agent_id
+    // When an agent is running, new messages are queued here and processed after completion
+    pending_messages: Arc<DashMap<Uuid, VecDeque<PendingMessage>>>,
 }
 
 impl ChatRunner {
@@ -144,6 +173,7 @@ impl ChatRunner {
             db,
             streams: Arc::new(DashMap::new()),
             cancellation_tokens: Arc::new(DashMap::new()),
+            pending_messages: Arc::new(DashMap::new()),
         }
     }
 
@@ -209,34 +239,12 @@ impl ChatRunner {
             return;
         }
 
-        // Get sender agent id if this is an agent message
-        let sender_agent_id = if message.sender_type == ChatSenderType::Agent {
-            message.sender_id
-        } else {
-            None
-        };
-
         let session_id = session.id;
         let mentions = message.mentions.0.clone();
         for mention in mentions {
             let runner = self.clone();
             let message_clone = message.clone();
-            let sender_agent_id_clone = sender_agent_id;
             tokio::spawn(async move {
-                // Check if mentioned agent is the same as sender (prevent self-triggering)
-                if let Some(sender_id) = sender_agent_id_clone {
-                    if let Ok(Some(agent)) = ChatAgent::find_by_name(&runner.db.pool, &mention).await {
-                        if agent.id == sender_id {
-                            tracing::debug!(
-                                agent_id = %sender_id,
-                                mention = mention,
-                                "skipping self-mention by agent"
-                            );
-                            return;
-                        }
-                    }
-                }
-
                 if let Err(err) =
                     runner.run_agent_for_mention(session_id, &mention, &message_clone).await
                 {
@@ -273,31 +281,226 @@ impl ChatRunner {
         sender
     }
 
+    /// Process the next pending message for a session agent after it becomes idle
+    async fn process_pending_queue(&self, session_id: Uuid, session_agent_id: Uuid) {
+        // Get the next pending message from the queue
+        let pending = self
+            .pending_messages
+            .get_mut(&session_agent_id)
+            .and_then(|mut queue| queue.pop_front());
+
+        if let Some(pending_msg) = pending {
+            tracing::info!(
+                session_agent_id = %session_agent_id,
+                message_id = %pending_msg.message.id,
+                agent_name = %pending_msg.agent_name,
+                "processing queued message for agent"
+            );
+
+            // Process the queued message by calling run_agent_for_mention
+            // Use the stored agent_name to find the agent (handles rename gracefully)
+            if let Err(err) = self
+                .run_agent_for_mention(
+                    pending_msg.session_id,
+                    &pending_msg.agent_name,
+                    &pending_msg.message,
+                )
+                .await
+            {
+                tracing::warn!(
+                    error = %err,
+                    agent_name = %pending_msg.agent_name,
+                    session_agent_id = %session_agent_id,
+                    "failed to process queued message"
+                );
+                // Mark this message's mention as failed
+                self.update_mention_status(pending_msg.message.id, &pending_msg.agent_name, "failed").await;
+                self.emit(
+                    pending_msg.session_id,
+                    ChatStreamEvent::MentionAcknowledged {
+                        session_id: pending_msg.session_id,
+                        message_id: pending_msg.message.id,
+                        mentioned_agent: pending_msg.agent_name.clone(),
+                        agent_id: pending_msg.agent_id,
+                        status: MentionStatus::Failed,
+                    },
+                );
+                // Continue processing the rest of the queue
+                Box::pin(self.process_pending_queue(session_id, session_agent_id)).await;
+            }
+        } else {
+            // Clean up empty queue entry
+            self.pending_messages.remove(&session_agent_id);
+        }
+    }
+
+    /// Clear all pending messages for a session agent and mark them as failed
+    /// Called when an agent fails/dies to prevent messages from being stuck
+    async fn clear_pending_queue_on_failure(&self, _session_id: Uuid, session_agent_id: Uuid) {
+        // Remove and get all pending messages for this agent
+        let pending_messages = self.pending_messages.remove(&session_agent_id);
+
+        if let Some((_, messages)) = pending_messages {
+            for pending_msg in messages {
+                tracing::info!(
+                    session_agent_id = %session_agent_id,
+                    message_id = %pending_msg.message.id,
+                    agent_name = %pending_msg.agent_name,
+                    "marking queued message as failed due to agent failure"
+                );
+
+                // Update message meta to show failed status
+                self.update_mention_status(pending_msg.message.id, &pending_msg.agent_name, "failed").await;
+
+                // Emit failed event
+                self.emit(
+                    pending_msg.session_id,
+                    ChatStreamEvent::MentionAcknowledged {
+                        session_id: pending_msg.session_id,
+                        message_id: pending_msg.message.id,
+                        mentioned_agent: pending_msg.agent_name.clone(),
+                        agent_id: pending_msg.agent_id,
+                        status: MentionStatus::Failed,
+                    },
+                );
+            }
+        }
+    }
+
+    async fn resolve_session_agent_for_mention(
+        &self,
+        session_id: Uuid,
+        mention: &str,
+    ) -> Result<Option<(ChatSessionAgent, ChatAgent)>, ChatRunnerError> {
+        let session_agents =
+            ChatSessionAgent::find_all_for_session(&self.db.pool, session_id).await?;
+        if session_agents.is_empty() {
+            return Ok(None);
+        }
+
+        let agents = ChatAgent::find_all(&self.db.pool).await?;
+        let agent_map: HashMap<Uuid, ChatAgent> =
+            agents.into_iter().map(|agent| (agent.id, agent)).collect();
+
+        let mut exact_match: Option<(ChatSessionAgent, ChatAgent)> = None;
+        let mut ci_match: Option<(ChatSessionAgent, ChatAgent)> = None;
+
+        for session_agent in session_agents {
+            let Some(agent) = agent_map.get(&session_agent.agent_id) else {
+                tracing::warn!(
+                    session_agent_id = %session_agent.id,
+                    agent_id = %session_agent.agent_id,
+                    "chat session agent missing backing agent"
+                );
+                continue;
+            };
+
+            if agent.name == mention {
+                exact_match = Some((session_agent, agent.clone()));
+                break;
+            }
+
+            if agent.name.eq_ignore_ascii_case(mention) {
+                if ci_match.is_some() {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        mention = mention,
+                        "multiple session agents matched mention; skipping"
+                    );
+                    return Ok(None);
+                }
+                ci_match = Some((session_agent, agent.clone()));
+            }
+        }
+
+        let Some((session_agent, agent)) = exact_match.or(ci_match) else {
+            return Ok(None);
+        };
+
+        if session_agent.workspace_path.is_none() {
+            let workspace_path = self.build_workspace_path(session_id, agent.id);
+            let updated = ChatSessionAgent::update_workspace_path(
+                &self.db.pool,
+                session_agent.id,
+                Some(workspace_path),
+            )
+            .await?;
+            return Ok(Some((updated, agent)));
+        }
+
+        Ok(Some((session_agent, agent)))
+    }
+
     async fn run_agent_for_mention(
         &self,
         session_id: Uuid,
         mention: &str,
         source_message: &ChatMessage,
     ) -> Result<(), ChatRunnerError> {
-        let Some(agent) = ChatAgent::find_by_name(&self.db.pool, mention).await? else {
+        let Some((session_agent, agent)) =
+            self.resolve_session_agent_for_mention(session_id, mention).await?
+        else {
+            if let Some(agent) = ChatAgent::find_by_name(&self.db.pool, mention).await? {
+                tracing::debug!(
+                    session_id = %session_id,
+                    agent_id = %agent.id,
+                    mention = mention,
+                    "chat session agent not configured; skipping mention"
+                );
+                return Ok(());
+            }
             return Err(ChatRunnerError::AgentNotFound(mention.to_string()));
         };
 
-        let Some(session_agent) = self.get_session_agent(session_id, &agent).await? else {
-            tracing::debug!(
-                session_id = %session_id,
-                agent_id = %agent.id,
-                "chat session agent not configured; skipping mention"
-            );
-            return Ok(());
-        };
+        if source_message.sender_type == ChatSenderType::Agent {
+            if let Some(sender_id) = source_message.sender_id {
+                if sender_id == agent.id {
+                    tracing::debug!(
+                        agent_id = %sender_id,
+                        mention = mention,
+                        "skipping self-mention by agent"
+                    );
+                    return Ok(());
+                }
+            }
+        }
 
         if session_agent.state == ChatSessionAgentState::Running {
+            // Queue the message for later processing instead of skipping
             tracing::debug!(
                 session_agent_id = %session_agent.id,
                 agent_id = %agent.id,
-                "chat session agent already running; skipping new run"
+                message_id = %source_message.id,
+                "chat session agent already running; queueing message for later"
             );
+
+            let pending = PendingMessage {
+                session_id,
+                agent_id: agent.id,
+                agent_name: agent.name.clone(),
+                message: source_message.clone(),
+            };
+
+            self.pending_messages
+                .entry(session_agent.id)
+                .or_insert_with(VecDeque::new)
+                .push_back(pending);
+
+            // Emit a "received" status to indicate the message is queued
+            self.emit(
+                session_id,
+                ChatStreamEvent::MentionAcknowledged {
+                    session_id,
+                    message_id: source_message.id,
+                    mentioned_agent: agent.name.clone(),
+                    agent_id: agent.id,
+                    status: MentionStatus::Received,
+                },
+            );
+
+            // Persist received status to message meta
+            self.update_mention_status(source_message.id, &agent.name, "received").await;
+
             return Ok(());
         }
 
@@ -374,11 +577,17 @@ impl ChatRunner {
             let reference_context = self
                 .build_reference_context(session_id, source_message, &context_dir)
                 .await?;
+            let message_attachments = self
+                .build_message_attachment_context(source_message, &context_dir)
+                .await?;
+            let session_agents = self.build_session_agent_summaries(session_id).await?;
             let prompt = self.build_prompt(
                 &agent,
                 source_message,
                 &context_snapshot.jsonl,
                 &context_snapshot.workspace_path,
+                &session_agents,
+                message_attachments.as_ref(),
                 reference_context.as_ref(),
             );
             fs::write(&input_path, &prompt).await?;
@@ -498,32 +707,6 @@ impl ChatRunner {
             .join(agent_id.to_string())
             .to_string_lossy()
             .to_string()
-    }
-
-    async fn get_session_agent(
-        &self,
-        session_id: Uuid,
-        agent: &ChatAgent,
-    ) -> Result<Option<ChatSessionAgent>, ChatRunnerError> {
-        if let Some(existing) =
-            ChatSessionAgent::find_by_session_and_agent(&self.db.pool, session_id, agent.id)
-                .await?
-        {
-            if existing.workspace_path.is_none() {
-                let workspace_path = self.build_workspace_path(session_id, agent.id);
-                return Ok(Some(
-                    ChatSessionAgent::update_workspace_path(
-                        &self.db.pool,
-                        existing.id,
-                        Some(workspace_path),
-                    )
-                    .await?,
-                ));
-            }
-            return Ok(Some(existing));
-        }
-
-        Ok(None)
     }
 
     fn parse_runner_type(&self, agent: &ChatAgent) -> Result<BaseCodingAgent, ChatRunnerError> {
@@ -723,7 +906,12 @@ impl ChatRunner {
         let context_path = context_dir.join("messages.jsonl");
         fs::write(&context_path, jsonl.as_bytes()).await?;
 
-        let run_context_path = run_dir.join("messages.jsonl");
+        let runs_dir = run_dir
+            .parent()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from(workspace_path).join(".runs"));
+        fs::create_dir_all(&runs_dir).await?;
+        let run_context_path = runs_dir.join(format!("run_{session_id}.jsonl"));
         fs::write(&run_context_path, jsonl.as_bytes()).await?;
 
         Ok(ContextSnapshot {
@@ -813,12 +1001,110 @@ impl ChatRunner {
         }))
     }
 
+    async fn build_message_attachment_context(
+        &self,
+        source_message: &ChatMessage,
+        context_dir: &PathBuf,
+    ) -> Result<Option<MessageAttachmentContext>, ChatRunnerError> {
+        let attachments = chat::extract_attachments(&source_message.meta.0);
+        if attachments.is_empty() {
+            return Ok(None);
+        }
+
+        let message_dir = context_dir
+            .join("attachments")
+            .join(source_message.id.to_string());
+        fs::create_dir_all(&message_dir).await?;
+
+        let mut message_attachments = Vec::new();
+        for attachment in attachments {
+            let relative = PathBuf::from(&attachment.relative_path);
+            if relative.is_absolute()
+                || relative
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir))
+            {
+                continue;
+            }
+
+            let source_path = asset_dir().join(&relative);
+            let file_name = source_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| attachment.name.clone());
+            let dest_path = message_dir.join(&file_name);
+            let local_path = if fs::copy(&source_path, &dest_path).await.is_ok() {
+                dest_path.to_string_lossy().to_string()
+            } else {
+                source_path.to_string_lossy().to_string()
+            };
+
+            message_attachments.push(ReferenceAttachment {
+                name: attachment.name,
+                mime_type: attachment.mime_type,
+                size_bytes: attachment.size_bytes,
+                kind: attachment.kind,
+                local_path,
+            });
+        }
+
+        Ok(Some(MessageAttachmentContext {
+            message_id: source_message.id,
+            attachments: message_attachments,
+        }))
+    }
+
+    async fn build_session_agent_summaries(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Vec<SessionAgentSummary>, ChatRunnerError> {
+        let session_agents =
+            ChatSessionAgent::find_all_for_session(&self.db.pool, session_id).await?;
+        if session_agents.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let agents = ChatAgent::find_all(&self.db.pool).await?;
+        let agent_map: HashMap<Uuid, ChatAgent> =
+            agents.into_iter().map(|agent| (agent.id, agent)).collect();
+
+        let mut summaries = Vec::with_capacity(session_agents.len());
+        for session_agent in session_agents {
+            let Some(agent) = agent_map.get(&session_agent.agent_id) else {
+                tracing::warn!(
+                    session_agent_id = %session_agent.id,
+                    agent_id = %session_agent.agent_id,
+                    "chat session agent missing backing agent"
+                );
+                continue;
+            };
+            let system_prompt = agent.system_prompt.trim();
+            summaries.push(SessionAgentSummary {
+                session_agent_id: session_agent.id,
+                agent_id: agent.id,
+                name: agent.name.clone(),
+                runner_type: agent.runner_type.clone(),
+                state: session_agent.state,
+                system_prompt: if system_prompt.is_empty() {
+                    None
+                } else {
+                    Some(system_prompt.to_string())
+                },
+                tools_enabled: agent.tools_enabled.0.clone(),
+            });
+        }
+
+        Ok(summaries)
+    }
+
     fn build_prompt(
         &self,
         agent: &ChatAgent,
         message: &ChatMessage,
         context_jsonl: &str,
         context_path: &PathBuf,
+        session_agents: &[SessionAgentSummary],
+        message_attachments: Option<&MessageAttachmentContext>,
         reference: Option<&ReferenceContext>,
     ) -> String {
         let mut prompt = String::new();
@@ -836,6 +1122,20 @@ impl ChatRunner {
             prompt.push_str(agent.system_prompt.trim());
             prompt.push_str("\n[/AGENT_ROLE]\n\n");
         }
+
+        prompt.push_str("[SESSION_AGENTS]\n");
+        prompt.push_str("AI members in current session in JSONL format.\n");
+        if session_agents.is_empty() {
+            prompt.push_str("none\n");
+        } else {
+            for summary in session_agents {
+                if let Ok(line) = serde_json::to_string(summary) {
+                    prompt.push_str(&line);
+                    prompt.push('\n');
+                }
+            }
+        }
+        prompt.push_str("[/SESSION_AGENTS]\n\n");
 
         prompt.push_str("[GROUP_CONTEXT]\n");
         prompt.push_str("Historical group chat messages (oldest to newest) in JSONL format.\n");
@@ -871,6 +1171,28 @@ impl ChatRunner {
             prompt.push_str("reference_content:\n");
             prompt.push_str(reference.content.trim());
             prompt.push_str("\n[/REFERENCE_MESSAGE]\n\n");
+        }
+
+        if let Some(message_attachments) = message_attachments {
+            if !message_attachments.attachments.is_empty() {
+                prompt.push_str("[MESSAGE_ATTACHMENTS]\n");
+                prompt.push_str("Attachments included with this message.\n");
+                prompt.push_str(&format!(
+                    "message_id={}\n",
+                    message_attachments.message_id
+                ));
+                for attachment in &message_attachments.attachments {
+                    prompt.push_str(&format!(
+                        "- name={} kind={} size_bytes={} mime_type={} local_path={}\n",
+                        attachment.name,
+                        attachment.kind,
+                        attachment.size_bytes,
+                        attachment.mime_type.as_deref().unwrap_or("unknown"),
+                        attachment.local_path
+                    ));
+                }
+                prompt.push_str("[/MESSAGE_ATTACHMENTS]\n\n");
+            }
         }
 
         prompt.push_str("[USER_MESSAGE]\n");
@@ -1125,6 +1447,7 @@ impl ChatRunner {
                             MentionStatus::Completed => "completed",
                             MentionStatus::Failed => "failed",
                             MentionStatus::Running => "running",
+                            MentionStatus::Received => "received",
                         };
                         if let Ok(Some(msg)) = ChatMessage::find_by_id(&db.pool, source_message_id).await {
                             let mut meta = msg.meta.0.clone();
@@ -1141,6 +1464,15 @@ impl ChatRunner {
                             }
 
                             let _ = ChatMessage::update_meta(&db.pool, source_message_id, meta).await;
+                        }
+
+                        // Process any pending messages in the queue for this agent
+                        // Only process if the agent completed successfully (not failed/dead)
+                        if final_state == ChatSessionAgentState::Idle {
+                            runner.process_pending_queue(session_id, session_agent_id).await;
+                        } else {
+                            // Agent failed/died - clear pending queue and mark all as failed
+                            runner.clear_pending_queue_on_failure(session_id, session_agent_id).await;
                         }
 
                         break;

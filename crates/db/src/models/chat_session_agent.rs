@@ -116,8 +116,8 @@ impl ChatSessionAgent {
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as!(
             ChatSessionAgent,
-            r#"INSERT INTO chat_session_agents (id, session_id, agent_id, workspace_path)
-               VALUES ($1, $2, $3, $4)
+            r#"INSERT INTO chat_session_agents (id, session_id, agent_id, workspace_path, state)
+               VALUES ($1, $2, $3, $4, 'idle')
                RETURNING id as "id!: Uuid",
                          session_id as "session_id!: Uuid",
                          agent_id as "agent_id!: Uuid",
