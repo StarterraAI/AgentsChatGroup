@@ -254,7 +254,7 @@ export function ReposSettingsSection() {
                 className="w-full justify-between"
               />
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+            <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
               {repoOptions.length > 0 ? (
                 repoOptions.map((option) => (
                   <DropdownMenuItem
@@ -345,7 +345,7 @@ export function ReposSettingsSection() {
                 emptyMessage={t(
                   'settings.repos.general.defaultTargetBranch.noBranches'
                 )}
-                contentClassName="w-[var(--radix-dropdown-menu-trigger-width)]"
+                contentClassName="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]"
                 trigger={
                   <DropdownMenuTriggerButton
                     icon={GitBranchIcon}

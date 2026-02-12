@@ -452,7 +452,7 @@
     --chat-session-send-blue: #5a66ff;
     --chat-session-send-blue-hover: #4b57f2;
     --chat-session-sidebar-divider: rgba(255, 255, 255, 0.24);
-    --chat-session-archived-height-offset: 50px;
+    --chat-session-archived-height-offset: 60px;
     --chat-session-font-sans: 'Inter', -apple-system, BlinkMacSystemFont,
       'Segoe UI', sans-serif;
     --chat-session-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -490,7 +490,15 @@
   }
 
   .new-design .chat-session-left.collapsed {
-    align-items: center;
+    align-items: stretch;
+  }
+
+  .new-design .chat-session-left-collapsed-shell {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10px 8px;
   }
 
   .new-design .chat-session-left-header {
@@ -551,8 +559,8 @@
   }
 
   .new-design .chat-session-left-control-btn {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -564,6 +572,13 @@
 
   .new-design .chat-session-left-control-btn:hover {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .new-design .chat-session-left-control-icon {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    display: block;
   }
 
   .new-design .chat-session-left-new-btn {
@@ -657,6 +672,13 @@
     padding: 10px 8px;
   }
 
+  .new-design .chat-session-list-collapsed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 6px;
+  }
+
   .new-design .chat-session-list-empty {
     color: rgba(237, 244, 255, 0.72);
     padding: 8px;
@@ -683,11 +705,17 @@
   }
 
   .new-design .chat-session-item.collapsed {
+    width: 100%;
     margin-bottom: 6px;
   }
 
   .new-design .chat-session-item-inner {
     padding: 9px 10px;
+  }
+
+  .new-design .chat-session-item.collapsed .chat-session-item-inner {
+    justify-content: center;
+    padding: 8px;
   }
 
   .new-design .chat-session-item-content {
@@ -790,6 +818,62 @@
 
   .new-design .chat-session-header-meta {
     color: var(--chat-session-text-secondary);
+  }
+
+  .new-design .chat-session-header-search {
+    min-width: 0;
+  }
+
+  .new-design .chat-session-header-search-input-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .new-design .chat-session-header-search-input {
+    width: 240px;
+    max-width: 32vw;
+    min-width: 160px;
+    height: 30px;
+    border-radius: 12px;
+    border: 1px solid #d8e0ee;
+    background: #ecedf1;
+    padding-right: 28px;
+  }
+
+  .new-design .chat-session-header-search-input:focus {
+    border-color: #5353bf;
+  }
+
+  .new-design .chat-session-header-search-clear-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    border-radius: 999px;
+  }
+
+  .new-design .chat-session-header-search-clear-btn:hover {
+    color: #374151;
+    background: rgba(255, 255, 255, 0.7);
+  }
+
+  .new-design .chat-session-search-highlight {
+    background: #fde78a;
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  .new-design .chat-session-page
+    ::highlight(chat-session-search-highlight) {
+    background: #fde78a;
+    color: inherit;
   }
 
   .new-design .chat-session-header-icon-btn {
@@ -1234,6 +1318,10 @@
     background: #ffffff !important;
     border-color: var(--settings-input-border) !important;
     box-shadow: var(--chat-session-shadow-md, 0 4px 10px rgba(15, 23, 42, 0.08));
+  }
+
+  .new-design .settings-select-dropdown {
+    background: #f9f9fa !important;
   }
 
   .new-design .chat-settings-theme .dropdown-menu-item,

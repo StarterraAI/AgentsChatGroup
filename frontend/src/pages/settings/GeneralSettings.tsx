@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { FolderOpen, Loader2, Volume2 } from 'lucide-react';
+import { Loader2, Volume2 } from 'lucide-react';
 import {
   DEFAULT_PR_DESCRIPTION_PROMPT,
   EditorType,
@@ -36,7 +36,6 @@ import { EditorAvailabilityIndicator } from '@/components/EditorAvailabilityIndi
 import { useTheme } from '@/components/ThemeProvider';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { TagManager } from '@/components/TagManager';
-import { FolderPickerDialog } from '@/components/dialogs/shared/FolderPickerDialog';
 
 export function GeneralSettings() {
   const { t } = useTranslation(['settings', 'common']);
@@ -60,37 +59,10 @@ export function GeneralSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [branchPrefixError, setBranchPrefixError] = useState<string | null>(
-    null
-  );
   const { setTheme } = useTheme();
 
   // Check editor availability when draft editor changes
   const editorAvailability = useEditorAvailability(draft?.editor.editor_type);
-
-  const validateBranchPrefix = useCallback(
-    (prefix: string): string | null => {
-      if (!prefix) return null; // empty allowed
-      if (prefix.includes('/'))
-        return t('settings.general.git.branchPrefix.errors.slash');
-      if (prefix.startsWith('.'))
-        return t('settings.general.git.branchPrefix.errors.startsWithDot');
-      if (prefix.endsWith('.') || prefix.endsWith('.lock'))
-        return t('settings.general.git.branchPrefix.errors.endsWithDot');
-      if (prefix.includes('..') || prefix.includes('@{'))
-        return t('settings.general.git.branchPrefix.errors.invalidSequence');
-      if (/[ \t~^:?*[\\]/.test(prefix))
-        return t('settings.general.git.branchPrefix.errors.invalidChars');
-      // Control chars check
-      for (let i = 0; i < prefix.length; i++) {
-        const code = prefix.charCodeAt(i);
-        if (code < 0x20 || code === 0x7f)
-          return t('settings.general.git.branchPrefix.errors.controlChars');
-      }
-      return null;
-    },
-    [t]
-  );
 
   // When config loads or changes externally, update draft only if not dirty
   useEffect(() => {
@@ -143,6 +115,14 @@ export function GeneralSettings() {
     }
   };
 
+  const requestPushPermission = useCallback(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'default') return;
+    void Notification.requestPermission().catch((error) => {
+      console.warn('Failed to request notification permission', error);
+    });
+  }, []);
+
   const handleSave = async () => {
     if (!draft) return;
 
@@ -151,8 +131,14 @@ export function GeneralSettings() {
     setSuccess(false);
 
     try {
-      await updateAndSaveConfig(draft); // Atomically apply + persist
-      setTheme(draft.theme);
+      const normalizedTheme =
+        draft.theme === ThemeMode.DARK ? ThemeMode.LIGHT : draft.theme;
+      const nextConfig =
+        normalizedTheme === draft.theme
+          ? draft
+          : { ...draft, theme: normalizedTheme };
+      await updateAndSaveConfig(nextConfig); // Atomically apply + persist
+      setTheme(normalizedTheme);
       setDirty(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -168,17 +154,6 @@ export function GeneralSettings() {
     if (!config) return;
     setDraft(cloneDeep(config));
     setDirty(false);
-  };
-
-  const handleBrowseWorkspaceDir = async () => {
-    const result = await FolderPickerDialog.show({
-      value: draft?.workspace_dir ?? '',
-      title: t('settings.general.git.workspaceDir.dialogTitle'),
-      description: t('settings.general.git.workspaceDir.dialogDescription'),
-    });
-    if (result) {
-      updateDraft({ workspace_dir: result });
-    }
   };
 
   const resetDisclaimer = async () => {
@@ -245,7 +220,9 @@ export function GeneralSettings() {
               {t('settings.general.appearance.theme.label')}
             </Label>
             <Select
-              value={draft?.theme}
+              value={
+                draft?.theme === ThemeMode.DARK ? ThemeMode.LIGHT : draft?.theme
+              }
               onValueChange={(value: ThemeMode) =>
                 updateDraft({ theme: value })
               }
@@ -258,11 +235,13 @@ export function GeneralSettings() {
                 />
               </SelectTrigger>
               <SelectContent>
-                {Object.values(ThemeMode).map((theme) => (
+                {Object.values(ThemeMode)
+                  .filter((theme) => theme !== ThemeMode.DARK)
+                  .map((theme) => (
                   <SelectItem key={theme} value={theme}>
                     {toPrettyCase(theme)}
                   </SelectItem>
-                ))}
+                  ))}
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
@@ -435,88 +414,6 @@ export function GeneralSettings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('settings.general.git.title')}</CardTitle>
-          <CardDescription>
-            {t('settings.general.git.description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="git-branch-prefix">
-              {t('settings.general.git.branchPrefix.label')}
-            </Label>
-            <Input
-              id="git-branch-prefix"
-              type="text"
-              placeholder={t('settings.general.git.branchPrefix.placeholder')}
-              value={draft?.git_branch_prefix ?? ''}
-              onChange={(e) => {
-                const value = e.target.value.trim();
-                updateDraft({ git_branch_prefix: value });
-                setBranchPrefixError(validateBranchPrefix(value));
-              }}
-              aria-invalid={!!branchPrefixError}
-              className={branchPrefixError ? 'border-destructive' : undefined}
-            />
-            {branchPrefixError && (
-              <p className="text-sm text-destructive">{branchPrefixError}</p>
-            )}
-            <p className="text-sm text-muted-foreground">
-              {t('settings.general.git.branchPrefix.helper')}{' '}
-              {draft?.git_branch_prefix ? (
-                <>
-                  {t('settings.general.git.branchPrefix.preview')}{' '}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                    {t('settings.general.git.branchPrefix.previewWithPrefix', {
-                      prefix: draft.git_branch_prefix,
-                    })}
-                  </code>
-                </>
-              ) : (
-                <>
-                  {t('settings.general.git.branchPrefix.preview')}{' '}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                    {t('settings.general.git.branchPrefix.previewNoPrefix')}
-                  </code>
-                </>
-              )}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="workspace-dir">
-              {t('settings.general.git.workspaceDir.label')}
-            </Label>
-            <div className="flex space-x-2">
-              <Input
-                id="workspace-dir"
-                type="text"
-                placeholder={t('settings.general.git.workspaceDir.placeholder')}
-                value={draft?.workspace_dir ?? ''}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  updateDraft({ workspace_dir: value || null });
-                }}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleBrowseWorkspaceDir}
-              >
-                <FolderOpen className="h-4 w-4 mr-2" />
-                {t('settings.general.git.workspaceDir.browse')}
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {t('settings.general.git.workspaceDir.helper')}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>{t('settings.general.pullRequests.title')}</CardTitle>
           <CardDescription>
             {t('settings.general.pullRequests.description')}
@@ -664,14 +561,17 @@ export function GeneralSettings() {
             <Checkbox
               id="push-notifications"
               checked={draft?.notifications.push_enabled}
-              onCheckedChange={(checked: boolean) =>
+              onCheckedChange={(checked: boolean) => {
+                if (checked) {
+                  requestPushPermission();
+                }
                 updateDraft({
                   notifications: {
                     ...draft!.notifications,
                     push_enabled: checked,
                   },
-                })
-              }
+                });
+              }}
             />
             <div className="space-y-0.5">
               <Label htmlFor="push-notifications" className="cursor-pointer">
@@ -810,7 +710,7 @@ export function GeneralSettings() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!hasUnsavedChanges || saving || !!branchPrefixError}
+              disabled={!hasUnsavedChanges || saving}
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('settings.general.save.button')}

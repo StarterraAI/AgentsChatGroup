@@ -551,7 +551,7 @@ function ConfigActionsDropdown({
           <DotsThreeIcon className="size-icon-xs" weight="bold" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="settings-select-dropdown">
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();

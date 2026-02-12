@@ -22,6 +22,16 @@
         "icons/icon.ico",
         "icons/icon.icns"
       ],
+      "windows": {
+        "wix": {
+          "fragmentPaths": [
+            "wix/fragments/agents-chatgroup-directory.wxs"
+          ],
+          "componentRefs": [
+            "AgentsChatGroupDirectoryComponent"
+          ]
+        }
+      },
       "externalBin": [
         "bin/server"
       ]

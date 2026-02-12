@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   ArrowCounterClockwiseIcon,
   BoxArrowDownIcon,
@@ -6,6 +7,7 @@ import {
   PencilSimpleIcon,
   TrashIcon,
   UsersIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import type { ChatSession } from 'shared/types';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,10 @@ export interface ChatHeaderProps {
   activeSession: ChatSession | null;
   messageCount: number;
   memberCount: number;
+  isSearchOpen: boolean;
+  searchQuery: string;
+  onCloseSearch: () => void;
+  onSearchQueryChange: (value: string) => void;
   isArchived: boolean;
   // Title editing
   isEditingTitle: boolean;
@@ -44,6 +50,10 @@ export function ChatHeader({
   activeSession,
   messageCount,
   memberCount,
+  isSearchOpen,
+  searchQuery,
+  onCloseSearch,
+  onSearchQueryChange,
   isArchived,
   isEditingTitle,
   titleDraft,
@@ -62,6 +72,40 @@ export function ChatHeader({
   onToggleCleanupMode,
   isDeletingMessages,
 }: ChatHeaderProps) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const timer = window.setTimeout(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isSearchOpen]);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+
+      if (
+        searchInputContainerRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      onCloseSearch();
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isSearchOpen, onCloseSearch]);
+
   return (
     <header className="chat-session-header px-base py-half border-b border-border flex items-center justify-between">
       <div className="chat-session-header-main min-w-0">
@@ -146,6 +190,48 @@ export function ChatHeader({
           <UsersIcon className="size-icon-xs" />
           <span>{memberCount} AI members</span>
         </div>
+        {activeSession && isSearchOpen && (
+          <div
+            ref={searchInputContainerRef}
+            className="chat-session-header-search flex items-center gap-half"
+          >
+            <div className="chat-session-header-search-input-wrap">
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) =>
+                  onSearchQueryChange(event.target.value)
+                }
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    onCloseSearch();
+                  }
+                }}
+                placeholder="Search messages..."
+                className={cn(
+                  'chat-session-header-search-input',
+                  'px-base py-half text-sm text-normal focus:outline-none'
+                )}
+                aria-label="Search messages"
+              />
+              {searchQuery.length > 0 && (
+                <button
+                  type="button"
+                  className="chat-session-header-search-clear-btn"
+                  onClick={() => {
+                    onSearchQueryChange('');
+                    searchInputRef.current?.focus();
+                  }}
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <XIcon className="size-icon-2xs" weight="bold" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {activeSession && (
           <div className="chat-session-header-ops flex items-center gap-half">
             {isArchived && (

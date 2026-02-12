@@ -29,9 +29,9 @@ const SETTINGS_SECTIONS: {
   icon: Icon;
 }[] = [
   { id: 'general', icon: GearIcon },
-  { id: 'repos', icon: GitBranchIcon },
   { id: 'agents', icon: CpuIcon },
   { id: 'mcp', icon: PlugIcon },
+  { id: 'repos', icon: GitBranchIcon },
 ];
 
 export interface SettingsDialogProps {

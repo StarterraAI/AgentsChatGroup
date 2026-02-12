@@ -296,7 +296,7 @@ export function OrganizationsSettingsSection() {
                 className="w-full justify-between"
               />
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+            <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
               {orgOptions.length > 0 ? (
                 orgOptions.map((option) => (
                   <DropdownMenuItem

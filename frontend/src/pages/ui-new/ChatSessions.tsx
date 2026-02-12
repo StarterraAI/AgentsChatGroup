@@ -92,6 +92,18 @@ const isTextAttachment = (file: File) =>
   ].some((ext) => file.name.toLowerCase().endsWith(ext));
 
 const MAX_SESSION_TITLE_LENGTH = 20;
+const COLLAPSED_LEFT_SIDEBAR_WIDTH = 52;
+const MESSAGE_SEARCH_HIGHLIGHT_NAME = 'chat-session-search-highlight';
+const MAX_MESSAGE_SEARCH_HIGHLIGHT_RANGES = 4000;
+const MESSAGE_SEARCH_DEBOUNCE_MS = 120;
+
+type CSSHighlightRegistry = {
+  set: (name: string, highlight: unknown) => void;
+  delete: (name: string) => void;
+};
+
+const escapeSearchRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const getSessionTitleLength = (value: string) =>
   Array.from(value.trim()).length;
@@ -102,7 +114,7 @@ export function ChatSessions() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const promptFileInputRef = useRef<HTMLInputElement | null>(null);
-  const { profiles, loginStatus } = useUserSystem();
+  const { config, profiles, loginStatus } = useUserSystem();
   const { theme } = useTheme();
   const actualTheme = getActualTheme(theme);
 
@@ -121,6 +133,32 @@ export function ChatSessions() {
   } = useChatData(sessionId ?? null);
 
   const activeSessionId = sessionId ?? sortedSessions[0]?.id ?? null;
+  const notificationsRef = useRef(config?.notifications ?? null);
+  const sessionTitleByIdRef = useRef<Map<string, string>>(new Map());
+  const agentByIdRef = useRef(agentById);
+  const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
+  const notificationPermissionRequestedRef = useRef(false);
+
+  useEffect(() => {
+    notificationsRef.current = config?.notifications ?? null;
+  }, [config?.notifications]);
+
+  useEffect(() => {
+    sessionTitleByIdRef.current = new Map(
+      sortedSessions.map((session) => [
+        session.id,
+        session.title?.trim() || 'Group Chat',
+      ])
+    );
+  }, [sortedSessions]);
+
+  useEffect(() => {
+    agentByIdRef.current = agentById;
+  }, [agentById]);
+
+  useEffect(() => {
+    notifiedMessageIdsRef.current.clear();
+  }, [activeSessionId]);
 
   // Messages state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -157,6 +195,93 @@ export function ChatSessions() {
     [queryClient]
   );
 
+  const handleIncomingMessage = useCallback(
+    (message: ChatMessage) => {
+      upsertMessage(message);
+
+      const notifications = notificationsRef.current;
+      if (!notifications || message.sender_type === ChatSenderType.user) return;
+      if (!notifications.sound_enabled && !notifications.push_enabled) return;
+      if (notifiedMessageIdsRef.current.has(message.id)) return;
+      notifiedMessageIdsRef.current.add(message.id);
+
+      if (notifications.sound_enabled) {
+        const audio = new Audio(`/api/sounds/${notifications.sound_file}`);
+        void audio.play().catch((error) => {
+          console.warn(
+            'Failed to play incoming chat notification sound',
+            error
+          );
+        });
+      }
+
+      const canShowPush =
+        notifications.push_enabled &&
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        (document.visibilityState === 'hidden' || !document.hasFocus());
+
+      if (!canShowPush) return;
+
+      const senderLabel =
+        message.sender_type === ChatSenderType.agent
+          ? message.sender_id
+            ? agentByIdRef.current.get(message.sender_id)?.name ?? 'Agent'
+            : 'Agent'
+          : 'System';
+
+      const attachmentCount = extractAttachments(message.meta).length;
+      const content = message.content.trim();
+      const preview =
+        content.length > 0
+          ? truncateText(content, 120)
+          : attachmentCount > 0
+            ? `Shared ${attachmentCount} attachment${attachmentCount > 1 ? 's' : ''}`
+            : 'Sent a new message';
+
+      const sessionTitle =
+        (message.session_id &&
+          sessionTitleByIdRef.current.get(message.session_id)) ||
+        'Group Chat';
+
+      const showNotification = () => {
+        try {
+          const notification = new Notification(sessionTitle, {
+            body: `${senderLabel}: ${preview}`,
+            tag: `chat-session-${message.session_id ?? 'unknown'}`,
+          });
+          notification.onclick = () => {
+            window.focus();
+          };
+        } catch (error) {
+          console.warn('Failed to show chat notification', error);
+        }
+      };
+
+      if (Notification.permission === 'granted') {
+        showNotification();
+        return;
+      }
+
+      if (
+        Notification.permission === 'default' &&
+        !notificationPermissionRequestedRef.current
+      ) {
+        notificationPermissionRequestedRef.current = true;
+        void Notification.requestPermission()
+          .then((permission) => {
+            if (permission === 'granted') {
+              showNotification();
+            }
+          })
+          .catch((error) => {
+            console.warn('Failed to request notification permission', error);
+          });
+      }
+    },
+    [upsertMessage]
+  );
+
   // WebSocket connection
   const {
     streamingRuns,
@@ -169,7 +294,7 @@ export function ChatSessions() {
   } =
     useChatWebSocket(
       activeSessionId,
-      upsertMessage
+      handleIncomingMessage
     );
 
   // Mutations
@@ -185,7 +310,7 @@ export function ChatSessions() {
     (session) => navigate(`/chat/${session.id}`),
     (session) => navigate(`/chat/${session.id}`),
     upsertMessage,
-    (_count) => {
+    () => {
       if (activeSessionId) {
         queryClient.invalidateQueries({ queryKey: ['chatMessages', activeSessionId] });
       }
@@ -252,6 +377,7 @@ export function ChatSessions() {
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
   const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
   const [workspaceAgentId, setWorkspaceAgentId] = useState<string | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const previousSessionIdRef = useRef<string | null>(null);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -283,6 +409,9 @@ export function ChatSessions() {
   const [titleError, setTitleError] = useState<string | null>(null);
   const [isCleanupMode, setIsCleanupMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const [debouncedMessageSearchQuery, setDebouncedMessageSearchQuery] = useState('');
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
     message: string;
@@ -370,6 +499,9 @@ export function ChatSessions() {
     setStoppingAgents(new Set());
     setIsEditingTitle(false);
     setTitleError(null);
+    setIsMessageSearchOpen(false);
+    setMessageSearchQuery('');
+    setDebouncedMessageSearchQuery('');
     setIsPromptEditorOpen(false);
     setPromptFileError(null);
     setPromptFileLoading(false);
@@ -713,6 +845,16 @@ export function ChatSessions() {
     setLogError(null);
   }, [workspaceAgentId]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedMessageSearchQuery(messageSearchQuery);
+    }, MESSAGE_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [messageSearchQuery]);
+
   // Handlers
   const getMessageSenderLabel = useCallback(
     (message: ChatMessage) => {
@@ -727,6 +869,166 @@ export function ChatSessions() {
     },
     [agentById]
   );
+
+  const trimmedMessageSearchQuery = isMessageSearchOpen
+    ? debouncedMessageSearchQuery.trim()
+    : '';
+
+  const escapedMessageSearchQuery = useMemo(
+    () =>
+      trimmedMessageSearchQuery.length > 0
+        ? escapeSearchRegExp(trimmedMessageSearchQuery)
+        : '',
+    [trimmedMessageSearchQuery]
+  );
+
+  const messageSearchRegExp = useMemo(() => {
+    if (!escapedMessageSearchQuery) return null;
+    return new RegExp(escapedMessageSearchQuery, 'iu');
+  }, [escapedMessageSearchQuery]);
+
+  const messageSearchHighlightRegExp = useMemo(() => {
+    if (!escapedMessageSearchQuery) return null;
+    return new RegExp(escapedMessageSearchQuery, 'giu');
+  }, [escapedMessageSearchQuery]);
+
+  const filteredMessageList = useMemo(() => {
+    if (!messageSearchRegExp) return messageList;
+
+    return messageList.filter((message) => {
+      if (messageSearchRegExp.test(message.content)) {
+        return true;
+      }
+
+      if (messageSearchRegExp.test(getMessageSenderLabel(message))) {
+        return true;
+      }
+
+      const attachments = extractAttachments(message.meta);
+      return attachments.some((attachment) =>
+        messageSearchRegExp.test(attachment.name ?? '')
+      );
+    });
+  }, [getMessageSenderLabel, messageList, messageSearchRegExp]);
+
+  const handleCloseMessageSearch = useCallback(() => {
+    setIsMessageSearchOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalSearchShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key.toLowerCase() !== 'f') return;
+      if (!activeSession) return;
+
+      event.preventDefault();
+      setIsMessageSearchOpen(true);
+    };
+
+    document.addEventListener('keydown', handleGlobalSearchShortcut);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalSearchShortcut);
+    };
+  }, [activeSession]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof document === 'undefined' ||
+      typeof CSS === 'undefined'
+    ) {
+      return;
+    }
+
+    const cssHighlights = (
+      CSS as unknown as { highlights?: CSSHighlightRegistry }
+    ).highlights;
+    const HighlightCtor = (
+      window as unknown as {
+        Highlight?: new (...ranges: Range[]) => unknown;
+      }
+    ).Highlight;
+
+    if (!cssHighlights || typeof HighlightCtor !== 'function') {
+      return;
+    }
+
+    cssHighlights.delete(MESSAGE_SEARCH_HIGHLIGHT_NAME);
+
+    if (!messageSearchHighlightRegExp) {
+      return;
+    }
+
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const roots = container.querySelectorAll<HTMLElement>(
+      '.chat-session-message-body, .chat-session-message-row.is-system'
+    );
+    const ranges: Range[] = [];
+
+    roots.forEach((root) => {
+      if (ranges.length >= MAX_MESSAGE_SEARCH_HIGHLIGHT_RANGES) {
+        return;
+      }
+
+      const rangeRegExp = new RegExp(
+        messageSearchHighlightRegExp.source,
+        messageSearchHighlightRegExp.flags
+      );
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => {
+          const text = node.textContent;
+          const parent = node.parentElement;
+          if (!parent || !text || text.trim().length === 0) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (parent.closest('button, a')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+
+      let current = walker.nextNode();
+      while (current && ranges.length < MAX_MESSAGE_SEARCH_HIGHLIGHT_RANGES) {
+        const textNode = current as Text;
+        rangeRegExp.lastIndex = 0;
+        let match = rangeRegExp.exec(textNode.data);
+
+        while (match && ranges.length < MAX_MESSAGE_SEARCH_HIGHLIGHT_RANGES) {
+          const matchedText = match[0];
+          if (matchedText.length === 0) {
+            rangeRegExp.lastIndex += 1;
+            match = rangeRegExp.exec(textNode.data);
+            continue;
+          }
+
+          const range = document.createRange();
+          range.setStart(textNode, match.index);
+          range.setEnd(textNode, match.index + matchedText.length);
+          ranges.push(range);
+
+          match = rangeRegExp.exec(textNode.data);
+        }
+
+        current = walker.nextNode();
+      }
+    });
+
+    if (ranges.length > 0) {
+      cssHighlights.set(
+        MESSAGE_SEARCH_HIGHLIGHT_NAME,
+        new HighlightCtor(...ranges)
+      );
+    }
+
+    return () => {
+      cssHighlights.delete(MESSAGE_SEARCH_HIGHLIGHT_NAME);
+    };
+  }, [filteredMessageList, messageSearchHighlightRegExp]);
 
   const getReferencePreview = useCallback((message: ChatMessage) => {
     const attachments = extractAttachments(message.meta);
@@ -1274,7 +1576,7 @@ export function ChatSessions() {
     setIsLeftSidebarCollapsed((prev) => {
       if (!prev) {
         lastExpandedLeftWidthRef.current = leftSidebarWidth;
-        setLeftSidebarWidth(84);
+        setLeftSidebarWidth(COLLAPSED_LEFT_SIDEBAR_WIDTH);
         return true;
       }
       setLeftSidebarWidth(
@@ -1351,6 +1653,10 @@ export function ChatSessions() {
           activeSession={activeSession ?? null}
           messageCount={messageList.length}
           memberCount={sessionMembers.length}
+          isSearchOpen={isMessageSearchOpen}
+          searchQuery={messageSearchQuery}
+          onCloseSearch={handleCloseMessageSearch}
+          onSearchQueryChange={setMessageSearchQuery}
           isArchived={isArchived}
           isEditingTitle={isEditingTitle}
           titleDraft={titleDraft}
@@ -1444,7 +1750,10 @@ export function ChatSessions() {
         )}
 
         {/* Messages */}
-        <div className="chat-session-messages flex-1 min-h-0 overflow-y-auto p-base space-y-base">
+        <div
+          ref={messagesContainerRef}
+          className="chat-session-messages flex-1 min-h-0 overflow-y-auto p-base space-y-base"
+        >
           {isLoading && <div className="text-sm text-low">Loading chat...</div>}
           {isArchived && !isLoading && (
             <div className="text-xs text-low border border-border rounded-sm bg-secondary/60 px-base py-half">
@@ -1456,8 +1765,16 @@ export function ChatSessions() {
               No messages yet. Start the conversation below.
             </div>
           )}
+          {!isLoading &&
+            messageList.length > 0 &&
+            trimmedMessageSearchQuery &&
+            filteredMessageList.length === 0 && (
+              <div className="text-sm text-low">
+                No messages match "{messageSearchQuery.trim()}".
+              </div>
+            )}
 
-          {messageList.map((message) => {
+          {filteredMessageList.map((message) => {
             const isAgent = message.sender_type === ChatSenderType.agent;
             const agentName =
               isAgent && message.sender_id

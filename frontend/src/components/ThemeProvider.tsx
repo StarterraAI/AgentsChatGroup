@@ -11,6 +11,9 @@ type ThemeProviderState = {
   setTheme: (theme: ThemeMode) => void;
 };
 
+const normalizeThemeMode = (theme: ThemeMode): ThemeMode =>
+  theme === ThemeMode.DARK ? ThemeMode.LIGHT : theme;
+
 const initialState: ThemeProviderState = {
   theme: ThemeMode.SYSTEM,
   setTheme: () => null,
@@ -23,11 +26,13 @@ export function ThemeProvider({
   initialTheme = ThemeMode.SYSTEM,
   ...props
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<ThemeMode>(initialTheme);
+  const [theme, setThemeState] = useState<ThemeMode>(
+    normalizeThemeMode(initialTheme)
+  );
 
   // Update theme when initialTheme changes
   useEffect(() => {
-    setThemeState(initialTheme);
+    setThemeState(normalizeThemeMode(initialTheme));
   }, [initialTheme]);
 
   useEffect(() => {
@@ -49,7 +54,7 @@ export function ThemeProvider({
   }, [theme]);
 
   const setTheme = (newTheme: ThemeMode) => {
-    setThemeState(newTheme);
+    setThemeState(normalizeThemeMode(newTheme));
   };
 
   const value = {

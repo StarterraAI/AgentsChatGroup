@@ -280,7 +280,7 @@ export function McpSettingsSection() {
                 className="w-full justify-between"
               />
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+            <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
               {profileOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}

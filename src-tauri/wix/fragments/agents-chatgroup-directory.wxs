@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Directory Id="AgentsChatGroupDirectory" Name="AgentsChatGroup" />
+    </DirectoryRef>
+  </Fragment>
+
+  <Fragment>
+    <Component
+      Id="AgentsChatGroupDirectoryComponent"
+      Directory="AgentsChatGroupDirectory"
+      Guid="*"
+    >
+      <CreateFolder />
+      <RemoveFolder
+        Id="RemoveAgentsChatGroupDirectory"
+        Directory="AgentsChatGroupDirectory"
+        On="uninstall"
+      />
+      <RegistryValue
+        Root="HKLM"
+        Key="Software\[Manufacturer]\[ProductName]"
+        Name="AgentsChatGroupDirectoryInstalled"
+        Type="integer"
+        Value="1"
+        KeyPath="yes"
+      />
+    </Component>
+  </Fragment>
+</Wix>

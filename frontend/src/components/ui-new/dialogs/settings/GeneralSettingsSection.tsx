@@ -2,11 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cloneDeep, isEqual, merge } from 'lodash';
 import {
-  FolderSimpleIcon,
   SpeakerHighIcon,
   SpinnerIcon,
 } from '@phosphor-icons/react';
-import { FolderPickerDialog } from '@/components/dialogs/shared/FolderPickerDialog';
 import {
   type BaseCodingAgent,
   DEFAULT_COMMIT_REMINDER_PROMPT,
@@ -62,9 +60,6 @@ export function GeneralSettingsSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [branchPrefixError, setBranchPrefixError] = useState<string | null>(
-    null
-  );
   const { setTheme } = useTheme();
 
   // Executor options for the default coding agent dropdown
@@ -78,40 +73,6 @@ export function GeneralSettingsSection() {
     profiles?.[draft?.executor_profile?.executor || ''];
   const hasVariants =
     selectedAgentProfile && Object.keys(selectedAgentProfile).length > 0;
-
-  const validateBranchPrefix = useCallback(
-    (prefix: string): string | null => {
-      if (!prefix) return null;
-      if (prefix.includes('/'))
-        return t('settings.general.git.branchPrefix.errors.slash');
-      if (prefix.startsWith('.'))
-        return t('settings.general.git.branchPrefix.errors.startsWithDot');
-      if (prefix.endsWith('.') || prefix.endsWith('.lock'))
-        return t('settings.general.git.branchPrefix.errors.endsWithDot');
-      if (prefix.includes('..') || prefix.includes('@{'))
-        return t('settings.general.git.branchPrefix.errors.invalidSequence');
-      if (/[ \t~^:?*[\\]/.test(prefix))
-        return t('settings.general.git.branchPrefix.errors.invalidChars');
-      for (let i = 0; i < prefix.length; i++) {
-        const code = prefix.charCodeAt(i);
-        if (code < 0x20 || code === 0x7f)
-          return t('settings.general.git.branchPrefix.errors.controlChars');
-      }
-      return null;
-    },
-    [t]
-  );
-
-  const handleBrowseWorkspaceDir = async () => {
-    const result = await FolderPickerDialog.show({
-      value: draft?.workspace_dir ?? '',
-      title: t('settings.general.git.workspaceDir.dialogTitle'),
-      description: t('settings.general.git.workspaceDir.dialogDescription'),
-    });
-    if (result) {
-      updateDraft({ workspace_dir: result });
-    }
-  };
 
   useEffect(() => {
     if (!config) return;
@@ -164,6 +125,14 @@ export function GeneralSettingsSection() {
     }
   };
 
+  const requestPushPermission = useCallback(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'default') return;
+    void Notification.requestPermission().catch((error) => {
+      console.warn('Failed to request notification permission', error);
+    });
+  }, []);
+
   const handleSave = async () => {
     if (!draft) return;
 
@@ -172,8 +141,14 @@ export function GeneralSettingsSection() {
     setSuccess(false);
 
     try {
-      await updateAndSaveConfig(draft);
-      setTheme(draft.theme);
+      const normalizedTheme =
+        draft.theme === ThemeMode.DARK ? ThemeMode.LIGHT : draft.theme;
+      const nextConfig =
+        normalizedTheme === draft.theme
+          ? draft
+          : { ...draft, theme: normalizedTheme };
+      await updateAndSaveConfig(nextConfig);
+      setTheme(normalizedTheme);
       setDirty(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -229,10 +204,12 @@ export function GeneralSettingsSection() {
     );
   }
 
-  const themeOptions = Object.values(ThemeMode).map((theme) => ({
-    value: theme,
-    label: toPrettyCase(theme),
-  }));
+  const themeOptions = Object.values(ThemeMode)
+    .filter((theme) => theme !== ThemeMode.DARK)
+    .map((theme) => ({
+      value: theme,
+      label: toPrettyCase(theme),
+    }));
 
   const editorOptions = Object.values(EditorType).map((editor) => ({
     value: editor,
@@ -269,7 +246,9 @@ export function GeneralSettingsSection() {
           description={t('settings.general.appearance.theme.helper')}
         >
           <SettingsSelect
-            value={draft?.theme}
+            value={
+              draft?.theme === ThemeMode.DARK ? ThemeMode.LIGHT : draft?.theme
+            }
             options={themeOptions}
             onChange={(value) => updateDraft({ theme: value })}
             placeholder={t('settings.general.appearance.theme.placeholder')}
@@ -405,7 +384,7 @@ export function GeneralSettingsSection() {
                   disabled={!profiles}
                 />
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+              <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
                 {executorOptions.map((option) => (
                   <DropdownMenuItem
                     key={option.value}
@@ -443,7 +422,7 @@ export function GeneralSettingsSection() {
                     className="w-full justify-between"
                   />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+                <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
                   {Object.keys(selectedAgentProfile).map((variantLabel) => (
                     <DropdownMenuItem
                       key={variantLabel}
@@ -473,74 +452,6 @@ export function GeneralSettingsSection() {
                 </span>
               </button>
             ) : null}
-          </div>
-        </SettingsField>
-      </SettingsCard>
-
-      {/* Git */}
-      <SettingsCard
-        title={t('settings.general.git.title')}
-        description={t('settings.general.git.description')}
-      >
-        <SettingsField
-          label={t('settings.general.git.branchPrefix.label')}
-          error={branchPrefixError}
-          description={
-            <>
-              {t('settings.general.git.branchPrefix.helper')}{' '}
-              {draft?.git_branch_prefix ? (
-                <>
-                  {t('settings.general.git.branchPrefix.preview')}{' '}
-                  <code className="text-xs bg-secondary px-1 py-0.5 rounded">
-                    {t('settings.general.git.branchPrefix.previewWithPrefix', {
-                      prefix: draft.git_branch_prefix,
-                    })}
-                  </code>
-                </>
-              ) : (
-                <>
-                  {t('settings.general.git.branchPrefix.preview')}{' '}
-                  <code className="text-xs bg-secondary px-1 py-0.5 rounded">
-                    {t('settings.general.git.branchPrefix.previewNoPrefix')}
-                  </code>
-                </>
-              )}
-            </>
-          }
-        >
-          <SettingsInput
-            value={draft?.git_branch_prefix ?? ''}
-            onChange={(value) => {
-              const trimmed = value.trim();
-              updateDraft({ git_branch_prefix: trimmed });
-              setBranchPrefixError(validateBranchPrefix(trimmed));
-            }}
-            placeholder={t('settings.general.git.branchPrefix.placeholder')}
-            error={!!branchPrefixError}
-          />
-        </SettingsField>
-
-        <SettingsField
-          label={t('settings.general.git.workspaceDir.label')}
-          description={t('settings.general.git.workspaceDir.helper')}
-        >
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <SettingsInput
-                value={draft?.workspace_dir ?? ''}
-                onChange={(value) =>
-                  updateDraft({ workspace_dir: value || null })
-                }
-                placeholder={t('settings.general.git.workspaceDir.placeholder')}
-              />
-            </div>
-            <PrimaryButton
-              variant="tertiary"
-              onClick={handleBrowseWorkspaceDir}
-            >
-              <FolderSimpleIcon className="size-icon-sm" weight="bold" />
-              {t('settings.general.git.workspaceDir.browse')}
-            </PrimaryButton>
           </div>
         </SettingsField>
       </SettingsCard>
@@ -705,14 +616,17 @@ export function GeneralSettingsSection() {
           label={t('settings.general.notifications.push.label')}
           description={t('settings.general.notifications.push.helper')}
           checked={draft?.notifications.push_enabled ?? false}
-          onChange={(checked) =>
+          onChange={(checked) => {
+            if (checked) {
+              requestPushPermission();
+            }
             updateDraft({
               notifications: {
                 ...draft!.notifications,
                 push_enabled: checked,
               },
-            })
-          }
+            });
+          }}
         />
       </SettingsCard>
 
@@ -820,7 +734,6 @@ export function GeneralSettingsSection() {
       <SettingsSaveBar
         show={hasUnsavedChanges}
         saving={saving}
-        saveDisabled={!!branchPrefixError}
         onSave={handleSave}
         onDiscard={handleDiscard}
       />
