@@ -1,3 +1,10 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { PlusIcon } from '@phosphor-icons/react';
 import { ChatSessionAgentState } from 'shared/types';
 import { cn } from '@/lib/utils';
@@ -17,6 +24,47 @@ const truncateByChars = (value: string, maxChars: number): string => {
   if (chars.length <= maxChars) return value;
   return `${chars.slice(0, maxChars).join('')}...`;
 };
+
+function MemberNameWithTooltip({ name }: { name: string }) {
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  const updateTruncation = useCallback(() => {
+    const el = textRef.current;
+    if (!el) return;
+    setIsTruncated(el.scrollWidth > el.clientWidth + 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    updateTruncation();
+  }, [name, updateTruncation]);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      updateTruncation();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateTruncation]);
+
+  const nameNode = (
+    <div
+      ref={textRef}
+      className="chat-session-member-name text-sm text-normal min-w-0 flex-1"
+    >
+      @{name}
+    </div>
+  );
+
+  if (!isTruncated) return nameNode;
+  return (
+    <Tooltip content={`@${name}`} side="bottom">
+      {nameNode}
+    </Tooltip>
+  );
+}
 
 export interface AiMembersSidebarProps {
   sessionMembers: SessionMember[];
@@ -138,8 +186,8 @@ export function AiMembersSidebar({
               key={sessionAgent.id}
               className="chat-session-member-card border border-border rounded-sm px-base py-half space-y-half"
             >
-              <div className="flex items-center justify-between gap-base">
-                <div className="flex items-center gap-half min-w-0 flex-1">
+              <div className="chat-session-member-header">
+                <div className="chat-session-member-primary flex items-center gap-half min-w-0">
                   <span
                     className={cn(
                       'size-2 rounded-full',
@@ -157,9 +205,7 @@ export function AiMembersSidebar({
                       className="chat-session-member-avatar-logo"
                     />
                   </span>
-                  <div className="chat-session-member-name text-sm text-normal min-w-0 flex-1">
-                    @{agent.name}
-                  </div>
+                  <MemberNameWithTooltip name={agent.name} />
                 </div>
                 <div className="chat-session-member-actions flex items-center gap-half text-xs">
                   <button
