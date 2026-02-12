@@ -32,7 +32,7 @@ export function PromptEditorModal({
       onClick={onClose}
     >
       <div
-        className="bg-primary border border-border shadow-xl flex flex-col overflow-hidden w-[92vw] h-[80vh] max-w-[1200px] rounded-xl"
+        className="chat-session-modal-surface chat-session-prompt-modal border border-border shadow-xl flex flex-col overflow-hidden w-[92vw] h-[80vh] max-w-[1200px] rounded-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-base py-half">
@@ -57,7 +57,7 @@ export function PromptEditorModal({
             onChange={(event) => onChange(event.target.value)}
             placeholder="Describe how this AI member should behave."
             className={cn(
-              'flex-1 w-full resize-none rounded-sm border border-border bg-panel',
+              'chat-session-prompt-modal-input flex-1 w-full resize-none rounded-sm border border-border bg-panel',
               'px-base py-base text-sm text-normal leading-relaxed focus:outline-none focus:ring-1 focus:ring-brand'
             )}
           />
@@ -65,7 +65,7 @@ export function PromptEditorModal({
             <div className="flex items-center gap-half text-xs text-low">
               <button
                 type="button"
-                className="text-brand hover:text-brand-hover"
+                className="chat-session-member-expand-btn"
                 onClick={() => promptFileInputRef.current?.click()}
                 disabled={promptFileLoading}
               >

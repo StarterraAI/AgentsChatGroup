@@ -3,16 +3,12 @@ import { XIcon } from '@phosphor-icons/react';
 
 import { GeneralSettingsSectionContent } from './GeneralSettingsSection';
 import { ReposSettingsSectionContent } from './ReposSettingsSection';
-import { OrganizationsSettingsSectionContent } from './OrganizationsSettingsSection';
-import { RemoteProjectsSettingsSectionContent } from './RemoteProjectsSettingsSection';
 import { AgentsSettingsSectionContent } from './AgentsSettingsSection';
 import { McpSettingsSectionContent } from './McpSettingsSection';
 
 export type SettingsSectionType =
   | 'general'
   | 'repos'
-  | 'organizations'
-  | 'remote-projects'
   | 'agents'
   | 'mcp';
 
@@ -20,10 +16,6 @@ export type SettingsSectionType =
 export type SettingsSectionInitialState = {
   general: undefined;
   repos: undefined;
-  organizations: { organizationId?: string } | undefined;
-  'remote-projects':
-    | { organizationId?: string; projectId?: string }
-    | undefined;
   agents: { executor?: string; variant?: string } | undefined;
   mcp: undefined;
 };
@@ -31,13 +23,11 @@ export type SettingsSectionInitialState = {
 interface SettingsSectionProps {
   type: SettingsSectionType;
   onClose?: () => void;
-  initialState?: SettingsSectionInitialState[SettingsSectionType];
 }
 
 export function SettingsSection({
   type,
   onClose,
-  initialState,
 }: SettingsSectionProps) {
   const { t } = useTranslation('settings');
 
@@ -47,16 +37,6 @@ export function SettingsSection({
         return <GeneralSettingsSectionContent />;
       case 'repos':
         return <ReposSettingsSectionContent />;
-      case 'organizations':
-        return <OrganizationsSettingsSectionContent />;
-      case 'remote-projects':
-        return (
-          <RemoteProjectsSettingsSectionContent
-            initialState={
-              initialState as SettingsSectionInitialState['remote-projects']
-            }
-          />
-        );
       case 'agents':
         return <AgentsSettingsSectionContent />;
       case 'mcp':
@@ -67,9 +47,9 @@ export function SettingsSection({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="settings-section flex flex-col h-full">
       {/* Header - sticky */}
-      <div className="p-4 border-b border-border bg-panel/95 backdrop-blur-sm hidden sm:flex items-center justify-between">
+      <div className="settings-section-header p-4 border-b border-border bg-panel/95 backdrop-blur-sm hidden sm:flex items-center justify-between">
         <h2 className="text-lg font-semibold text-high">
           {t(`settings.layout.nav.${type}`)}
         </h2>
@@ -85,7 +65,7 @@ export function SettingsSection({
       </div>
 
       {/* Content */}
-      <div className="space-y-6 px-6 pt-4 overflow-y-auto">
+      <div className="settings-section-body space-y-6 px-6 pt-4 overflow-y-auto">
         {renderContent()}
       </div>
     </div>

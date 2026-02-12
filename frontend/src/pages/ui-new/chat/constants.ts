@@ -1,9 +1,12 @@
 import { ChatSessionAgentState } from 'shared/types';
 import type { MessageTone } from './types';
 
-export const mentionRegex = /(^|\s)@([a-zA-Z0-9_-]*)$/;
-export const mentionTokenRegex = /(^|\s)@([a-zA-Z0-9_-]+)/g;
-export const memberNameRegex = /^[a-zA-Z0-9_-]+$/;
+export const mentionRegex = /(^|\s)@([\p{L}\p{N}_-]*)$/u;
+export const mentionTokenRegex = /(^|\s)@([\p{L}\p{N}_-]+)/gu;
+export const memberNameRegex = /^[\p{L}\p{N}_-]+$/u;
+export const MAX_MEMBER_NAME_LENGTH = 10;
+export const getMemberNameLength = (value: string) =>
+  Array.from(value.trim()).length;
 
 export const fallbackRunnerTypes = [
   'CLAUDE_CODE',
@@ -15,6 +18,7 @@ export const fallbackRunnerTypes = [
   'QWEN_CODE',
   'COPILOT',
   'DROID',
+  'KIMI_CODE',
 ];
 
 export const agentStateLabels: Record<ChatSessionAgentState, string> = {

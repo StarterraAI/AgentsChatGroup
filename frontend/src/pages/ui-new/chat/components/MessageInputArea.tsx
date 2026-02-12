@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
 import { MultiSelectDropdown } from '@/components/ui-new/primitives/MultiSelectDropdown';
+import { Tooltip } from '@/components/ui-new/primitives/Tooltip';
 
 const allowedAttachmentExtensions = [
   '.txt', '.csv', '.md', '.json', '.xml', '.yaml', '.yml',
@@ -117,6 +118,8 @@ export function MessageInputArea({
           values={selectedMentions}
           options={agentOptions}
           onChange={onSelectedMentionsChange}
+          triggerClassName="chat-session-mention-trigger !bg-[#cbcbd1] hover:!bg-[#cbcbd1] data-[state=open]:!bg-[#cbcbd1]"
+          menuContentClassName="!bg-[#ecedf1]"
           disabled={
             !activeSessionId ||
             mentionAgentsCount === 0 ||
@@ -241,8 +244,8 @@ export function MessageInputArea({
           disabled={isArchived || !activeSessionId}
           style={{ height: inputAreaHeight }}
           className={cn(
-            'chat-session-textarea w-full resize-none rounded-sm border border-border',
-            'px-base py-base text-sm text-normal leading-relaxed focus:outline-none focus:ring-1 focus:ring-brand',
+            'chat-session-textarea w-full resize-none',
+            'px-base py-base text-sm text-normal leading-relaxed focus:outline-none',
             isArchived && 'opacity-60 cursor-not-allowed'
           )}
         />
@@ -279,25 +282,30 @@ export function MessageInputArea({
 
       <div className="flex items-center justify-between gap-base">
         <div className="chat-session-input-hint flex items-center gap-half text-xs text-low">
-          <button
-            type="button"
-            className={cn(
-              'chat-session-attach-btn flex items-center justify-center rounded-sm border border-border bg-panel px-2 py-1',
-              'text-low hover:text-normal hover:border-border/80',
-              (isArchived ||
-                !activeSessionId ||
-                isUploadingAttachments) &&
-                'pointer-events-none opacity-50'
-            )}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={
-              isArchived ||
-              !activeSessionId ||
-              isUploadingAttachments
-            }
-          >
-            <PaperclipIcon className="size-icon-xs" />
-          </button>
+          <Tooltip content="Add attachment files" side="top">
+            <span className="inline-flex">
+              <button
+                type="button"
+                className={cn(
+                  'chat-session-attach-btn flex items-center justify-center rounded-sm border border-border bg-panel px-2 py-1',
+                  'hover:border-border/80',
+                  (isArchived ||
+                    !activeSessionId ||
+                    isUploadingAttachments) &&
+                    'pointer-events-none opacity-50'
+                )}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={
+                  isArchived ||
+                  !activeSessionId ||
+                  isUploadingAttachments
+                }
+                aria-label="Add attachment files"
+              >
+                <PaperclipIcon className="size-icon-xs" />
+              </button>
+            </span>
+          </Tooltip>
           <input
             ref={fileInputRef}
             type="file"

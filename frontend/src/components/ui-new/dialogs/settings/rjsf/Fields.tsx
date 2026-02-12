@@ -62,7 +62,7 @@ export function KeyValueField({
   const isDisabled = disabled || readonly;
 
   const inputClassName = cn(
-    'min-w-[50px] flex-1 bg-secondary border border-border rounded-sm px-base py-half text-base text-high font-mono text-sm',
+    'settings-input settings-rjsf-keyvalue-input min-w-[50px] flex-1 bg-secondary border border-border rounded-sm px-base py-half text-base text-high font-mono text-sm',
     'placeholder:text-low placeholder:opacity-80 focus:outline-none focus:ring-1 focus:ring-brand',
     isDisabled && 'opacity-50 cursor-not-allowed'
   );
@@ -90,7 +90,7 @@ export function KeyValueField({
             onClick={() => handleRemove(key)}
             disabled={isDisabled}
             className={cn(
-              'h-8 w-8 p-0 flex items-center justify-center shrink-0 rounded-sm',
+              'settings-icon-action h-8 w-8 p-0 flex items-center justify-center shrink-0 rounded-sm',
               'text-low hover:text-error hover:bg-error/10',
               'focus:outline-none focus:ring-1 focus:ring-brand',
               'disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
@@ -131,7 +131,7 @@ export function KeyValueField({
           onClick={handleAdd}
           disabled={isDisabled || !newKey.trim()}
           className={cn(
-            'h-8 w-8 p-0 flex items-center justify-center shrink-0 rounded-sm',
+            'settings-add-button h-8 w-8 p-0 flex items-center justify-center shrink-0 rounded-sm',
             'bg-secondary border border-border text-normal hover:bg-secondary/80',
             'focus:outline-none focus:ring-1 focus:ring-brand',
             'disabled:opacity-50 disabled:cursor-not-allowed transition-colors'

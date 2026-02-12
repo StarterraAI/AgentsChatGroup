@@ -48,7 +48,7 @@ export function DiffViewerModal({
     >
       <div
         className={cn(
-          'bg-primary border border-border shadow-xl flex flex-col overflow-hidden',
+          'chat-session-modal-surface border border-border shadow-xl flex flex-col overflow-hidden',
           isFullscreen
             ? 'w-full h-full rounded-none'
             : 'w-[92vw] h-[85vh] max-w-[1200px] rounded-xl'

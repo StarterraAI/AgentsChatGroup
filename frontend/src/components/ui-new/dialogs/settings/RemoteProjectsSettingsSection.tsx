@@ -436,7 +436,7 @@ export function RemoteProjectsSettingsSection({
 
         {/* Edit form (when project selected) */}
         {selectedProjectId && formState && (
-          <div className="bg-secondary/50 border border-border rounded-sm p-4 space-y-4">
+          <div className="settings-inline-panel bg-secondary/50 border border-border rounded-sm p-4 space-y-4">
             <SettingsField
               label={t(
                 'settings.remoteProjects.form.name.label',

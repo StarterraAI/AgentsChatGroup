@@ -1,7 +1,8 @@
-﻿pub mod codex_setup;
+pub mod codex_setup;
 pub mod cursor_setup;
 pub mod gh_cli_setup;
 pub mod images;
+pub mod kimi_setup;
 pub mod pr;
 pub mod util;
 pub mod workspace_summary;
@@ -329,6 +330,9 @@ pub async fn run_agent_setup(
         }
         CodingAgent::Codex(codex) => {
             codex_setup::run_codex_setup(&deployment, &workspace, &codex).await?;
+        }
+        CodingAgent::KimiCode(kimi) => {
+            kimi_setup::run_kimi_setup(&deployment, &workspace, &kimi).await?;
         }
         _ => return Err(ApiError::Executor(ExecutorError::SetupHelperNotSupported)),
     }
@@ -2013,4 +2017,5 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     Router::new().nest("/task-attempts", task_attempts_router)
 }
+
 

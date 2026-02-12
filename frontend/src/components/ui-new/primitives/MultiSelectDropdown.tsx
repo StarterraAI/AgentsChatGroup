@@ -25,6 +25,8 @@ export interface MultiSelectDropdownProps<T extends string = string> {
   label: string;
   menuLabel?: string;
   disabled?: boolean;
+  triggerClassName?: string;
+  menuContentClassName?: string;
 }
 
 export function MultiSelectDropdown<T extends string = string>({
@@ -35,6 +37,8 @@ export function MultiSelectDropdown<T extends string = string>({
   label,
   menuLabel,
   disabled,
+  triggerClassName,
+  menuContentClassName,
 }: MultiSelectDropdownProps<T>) {
   return (
     <DropdownMenu>
@@ -44,7 +48,8 @@ export function MultiSelectDropdown<T extends string = string>({
           className={cn(
             'flex items-center gap-half px-base py-half bg-panel rounded-sm',
             'text-sm text-normal hover:bg-secondary transition-colors',
-            'disabled:opacity-50 disabled:cursor-not-allowed'
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            triggerClassName
           )}
         >
           <IconComponent className="size-icon-xs" weight="bold" />
@@ -60,7 +65,10 @@ export function MultiSelectDropdown<T extends string = string>({
           <CaretDownIcon className="size-icon-2xs text-low" weight="bold" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        align="start"
+        className={menuContentClassName}
+      >
         {menuLabel && (
           <>
             <DropdownMenuLabel>{menuLabel}</DropdownMenuLabel>

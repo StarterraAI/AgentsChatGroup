@@ -21,7 +21,7 @@ interface TwoColumnPickerProps {
 
 export function TwoColumnPicker({ children }: TwoColumnPickerProps) {
   return (
-    <div className="flex flex-col md:flex-row border border-border rounded-sm overflow-hidden">
+    <div className="settings-two-column-picker flex flex-col md:flex-row border border-border rounded-sm overflow-hidden">
       {children}
     </div>
   );
@@ -44,17 +44,17 @@ export function TwoColumnPickerColumn({
   return (
     <div
       className={cn(
-        'flex-1',
+        'settings-two-column-column flex-1',
         isFirst && 'border-b md:border-b-0 md:border-r border-border'
       )}
     >
-      <div className="h-9 px-base border-b border-border bg-secondary/50 flex items-center justify-between">
-        <span className="text-sm font-medium text-low tracking-wide">
+      <div className="settings-two-column-header h-9 px-base border-b border-border bg-secondary/50 flex items-center justify-between">
+        <span className="settings-two-column-label text-sm font-medium text-low tracking-wide">
           {label}
         </span>
         {headerAction}
       </div>
-      <div className="max-h-32 md:h-32 overflow-y-auto bg-panel">
+      <div className="settings-two-column-body max-h-32 md:h-32 overflow-y-auto bg-panel">
         {children}
       </div>
     </div>
@@ -80,16 +80,16 @@ export function TwoColumnPickerItem({
   return (
     <div
       className={cn(
-        'group flex items-center gap-half px-base py-half cursor-pointer transition-colors',
+        'settings-two-column-item group flex items-center gap-half px-base py-half cursor-pointer transition-colors',
         'hover:bg-secondary',
-        selected && 'bg-brand/10 text-brand'
+        selected && 'settings-two-column-item-selected bg-brand/10 text-brand'
       )}
       onClick={onClick}
     >
       {leading}
       <span
         className={cn(
-          'text-sm truncate flex-1',
+          'settings-two-column-item-label text-sm truncate flex-1',
           selected ? 'text-brand font-medium' : 'text-normal'
         )}
       >
@@ -113,8 +113,10 @@ export function TwoColumnPickerBadge({
   return (
     <span
       className={cn(
-        'text-xs px-half rounded font-medium shrink-0',
-        variant === 'brand' ? 'bg-brand/15 text-brand' : 'bg-secondary text-low'
+        'settings-two-column-badge text-xs px-half rounded font-medium shrink-0',
+        variant === 'brand'
+          ? 'settings-two-column-badge-brand bg-brand/15 text-brand'
+          : 'settings-two-column-badge-default bg-secondary text-low'
       )}
     >
       {children}
@@ -129,7 +131,7 @@ interface TwoColumnPickerEmptyProps {
 
 export function TwoColumnPickerEmpty({ children }: TwoColumnPickerEmptyProps) {
   return (
-    <div className="px-base py-plusfifty text-sm text-low text-center">
+    <div className="settings-two-column-empty px-base py-plusfifty text-sm text-low text-center">
       {children}
     </div>
   );
@@ -152,17 +154,21 @@ export function SettingsCard({
   headerAction?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-4 pb-6 border-b border-border last:border-b-0 last:pb-0">
-      <div className="flex items-start justify-between">
+    <div className="settings-card space-y-4 pb-6 border-b border-border last:border-b-0 last:pb-0">
+      <div className="settings-card-header flex items-start justify-between">
         <div>
-          <h3 className="text-base font-medium text-high">{title}</h3>
+          <h3 className="settings-card-title text-base font-medium text-high">
+            {title}
+          </h3>
           {description && (
-            <p className="text-sm text-low mt-1">{description}</p>
+            <p className="settings-card-description text-sm text-low mt-1">
+              {description}
+            </p>
           )}
         </div>
         {headerAction}
       </div>
-      <div className="space-y-4">{children}</div>
+      <div className="settings-card-body space-y-4">{children}</div>
     </div>
   );
 }
@@ -180,14 +186,18 @@ export function SettingsField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="settings-field space-y-2">
       {label && (
-        <label className="text-sm font-medium text-normal">{label}</label>
+        <label className="settings-field-label text-sm font-medium text-normal">
+          {label}
+        </label>
       )}
       {children}
-      {error && <p className="text-sm text-error">{error}</p>}
+      {error && <p className="settings-field-error text-sm text-error">{error}</p>}
       {description && !error && (
-        <p className="text-sm text-low">{description}</p>
+        <p className="settings-field-description text-sm text-low">
+          {description}
+        </p>
       )}
     </div>
   );
@@ -210,7 +220,7 @@ export function SettingsCheckbox({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="settings-checkbox flex items-center gap-3">
       <input
         type="checkbox"
         id={id}
@@ -218,21 +228,25 @@ export function SettingsCheckbox({
         onChange={(e) => onChange(e.target.checked)}
         disabled={disabled}
         className={cn(
-          'mt-0.5 h-4 w-4 rounded border-border bg-secondary text-brand focus:ring-brand focus:ring-offset-0',
+          'settings-checkbox-input mt-0.5 h-4 w-4 rounded border-border bg-secondary text-brand focus:ring-brand focus:ring-offset-0',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       />
-      <div className="space-y-0.5">
+      <div className="settings-checkbox-content space-y-0.5">
         <label
           htmlFor={id}
           className={cn(
-            'text-sm font-medium text-normal cursor-pointer',
+            'settings-checkbox-label text-sm font-medium text-normal cursor-pointer',
             disabled && 'opacity-50 cursor-not-allowed'
           )}
         >
           {label}
         </label>
-        {description && <p className="text-sm text-low">{description}</p>}
+        {description && (
+          <p className="settings-checkbox-description text-sm text-low">
+            {description}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -260,14 +274,15 @@ export function SettingsSelect<T extends string>({
       <DropdownMenuTrigger asChild>
         <DropdownMenuTriggerButton
           label={selectedOption?.label || placeholder}
-          className={cn('w-full justify-between', className)}
+          className={cn('settings-select-trigger w-full justify-between', className)}
           disabled={disabled}
         />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+      <DropdownMenuContent className="settings-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
+            className="settings-select-option"
             onClick={() => onChange(option.value)}
           >
             {option.label}
@@ -300,7 +315,7 @@ export function SettingsInput({
       placeholder={placeholder}
       disabled={disabled}
       className={cn(
-        'w-full bg-secondary border rounded-sm px-base py-half text-sm text-high',
+        'settings-input w-full bg-secondary border rounded-sm px-base py-half text-sm text-high',
         'placeholder:text-low placeholder:opacity-80 focus:outline-none focus:ring-1 focus:ring-brand',
         error ? 'border-error' : 'border-border',
         disabled && 'opacity-50 cursor-not-allowed'
@@ -333,7 +348,7 @@ export function SettingsTextarea({
       disabled={disabled}
       rows={rows}
       className={cn(
-        'w-full bg-secondary border border-border rounded-sm px-base py-half text-sm text-high',
+        'settings-textarea w-full bg-secondary border border-border rounded-sm px-base py-half text-sm text-high',
         'placeholder:text-low placeholder:opacity-80 focus:outline-none focus:ring-1 focus:ring-brand',
         'resize-y',
         monospace && 'font-mono',
@@ -365,7 +380,7 @@ export function SettingsSaveBar({
   }
 
   return (
-    <div className="sticky bottom-0 z-10 bg-panel/80 backdrop-blur-sm border-t border-border/50 py-4 -mx-6 px-6 -mb-6">
+    <div className="settings-savebar sticky bottom-0 z-10 bg-panel/80 backdrop-blur-sm border-t border-border/50 py-4 -mx-6 px-6 -mb-6">
       <div
         className={cn(
           'flex items-center',
@@ -373,7 +388,7 @@ export function SettingsSaveBar({
         )}
       >
         {onDiscard && (
-          <span className="text-sm text-low">
+          <span className="settings-savebar-text text-sm text-low">
             {t('settings.common.unsavedChanges')}
           </span>
         )}

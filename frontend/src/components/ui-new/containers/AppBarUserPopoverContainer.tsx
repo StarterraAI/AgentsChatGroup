@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { OrganizationWithRole } from 'shared/types';
 import { AppBarUserPopover } from '../primitives/AppBarUserPopover';
-import { SettingsDialog } from '../dialogs/SettingsDialog';
 import { useAuth } from '@/hooks/auth/useAuth';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -46,7 +45,7 @@ export function AppBarUserPopoverContainer({
 
   const handleOrgSettings = async (orgId: string) => {
     setSelectedOrgId(orgId);
-    await SettingsDialog.show({ initialSection: 'organizations' });
+    navigate('/settings/organizations');
   };
 
   const handleMigrate = () => {

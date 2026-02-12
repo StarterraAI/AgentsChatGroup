@@ -30,7 +30,7 @@ export function Tooltip({
             side={side}
             sideOffset={4}
             className={cn(
-              'z-[10000] flex items-center rounded-sm bg-panel px-base py-half text-xs text-normal shadow-md',
+              'z-[10000] flex items-center rounded-sm border border-white bg-white px-base py-half text-xs text-normal shadow-md',
               'animate-in fade-in-0 zoom-in-95',
               className
             )}

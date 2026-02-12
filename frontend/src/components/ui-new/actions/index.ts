@@ -532,13 +532,7 @@ export const Actions = {
     requiresTarget: ActionTargetType.NONE,
     isVisible: (ctx) => ctx.layoutMode === 'kanban',
     execute: async (ctx) => {
-      await SettingsDialog.show({
-        initialSection: 'remote-projects',
-        initialState: {
-          organizationId: ctx.kanbanOrgId,
-          projectId: ctx.kanbanProjectId,
-        },
-      });
+      ctx.navigate('/settings/projects');
     },
   } satisfies GlobalActionDefinition,
 

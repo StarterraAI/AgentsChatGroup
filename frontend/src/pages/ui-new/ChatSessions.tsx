@@ -35,6 +35,8 @@ import {
   useDiffViewer,
   fallbackRunnerTypes,
   memberNameRegex,
+  MAX_MEMBER_NAME_LENGTH,
+  getMemberNameLength,
   getMessageTone,
   extractDiffMeta,
   extractMentions,
@@ -251,6 +253,7 @@ export function ChatSessions() {
   const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
   const [workspaceAgentId, setWorkspaceAgentId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const previousSessionIdRef = useRef<string | null>(null);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<SessionMember | null>(null);
   const [newMemberName, setNewMemberName] = useState('');
@@ -258,6 +261,11 @@ export function ChatSessions() {
   const [newMemberVariant, setNewMemberVariant] = useState('DEFAULT');
   const [newMemberPrompt, setNewMemberPrompt] = useState('');
   const [newMemberWorkspace, setNewMemberWorkspace] = useState('');
+  const memberNameLengthError =
+    newMemberName.trim().length > 0 &&
+    getMemberNameLength(newMemberName) > MAX_MEMBER_NAME_LENGTH
+      ? `AI member name cannot exceed ${MAX_MEMBER_NAME_LENGTH} characters.`
+      : null;
   const [memberError, setMemberError] = useState<string | null>(null);
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
@@ -285,7 +293,7 @@ export function ChatSessions() {
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(340);
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
-  const [inputAreaHeight, setInputAreaHeight] = useState(240);
+  const [inputAreaHeight, setInputAreaHeight] = useState(160);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | 'input' | null>(null);
   const resizeStartRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
   const lastExpandedLeftWidthRef = useRef(340);
@@ -474,6 +482,10 @@ export function ChatSessions() {
       ),
     [messages]
   );
+  const lastMessageId =
+    messageList.length > 0
+      ? messageList[messageList.length - 1].id
+      : null;
 
   const messageById = useMemo(
     () => new Map(messageList.map((message) => [message.id, message])),
@@ -678,9 +690,19 @@ export function ChatSessions() {
 
   // Auto-scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const isSessionChanged =
+      previousSessionIdRef.current !== activeSessionId;
+    previousSessionIdRef.current = activeSessionId;
+    const animationFrame = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({
+        behavior: isSessionChanged ? 'auto' : 'smooth',
+        block: 'end',
+      });
+    });
+    return () => cancelAnimationFrame(animationFrame);
   }, [
-    messageList.length,
+    activeSessionId,
+    lastMessageId,
     Object.keys(streamingRuns).length,
     placeholderAgents.length,
   ]);
@@ -934,6 +956,13 @@ export function ChatSessions() {
 
     if (!name) {
       setMemberError('AI member name is required.');
+      return;
+    }
+
+    if (getMemberNameLength(name) > MAX_MEMBER_NAME_LENGTH) {
+      setMemberError(
+        `AI member name cannot exceed ${MAX_MEMBER_NAME_LENGTH} characters.`
+      );
       return;
     }
 
@@ -1596,6 +1625,7 @@ export function ChatSessions() {
         newMemberVariant={newMemberVariant}
         newMemberPrompt={newMemberPrompt}
         newMemberWorkspace={newMemberWorkspace}
+        memberNameLengthError={memberNameLengthError}
         onNameChange={setNewMemberName}
         onRunnerTypeChange={setNewMemberRunnerType}
         onVariantChange={setNewMemberVariant}

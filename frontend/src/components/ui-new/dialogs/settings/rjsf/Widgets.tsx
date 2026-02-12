@@ -52,7 +52,7 @@ export const TextWidget = (props: WidgetProps) => {
       onBlur={handleBlur}
       onFocus={handleFocus}
       className={cn(
-        'w-full bg-secondary border border-border rounded-sm px-base py-half text-base text-high',
+        'settings-input settings-rjsf-input w-full bg-secondary border border-border rounded-sm px-base py-half text-base text-high',
         'placeholder:text-low placeholder:opacity-80 focus:outline-none focus:ring-1 focus:ring-brand',
         (disabled || readonly) && 'opacity-50 cursor-not-allowed'
       )}
@@ -105,14 +105,15 @@ export const SelectWidget = (props: WidgetProps) => {
         <DropdownMenuTriggerButton
           id={id}
           label={selectedOption?.label || placeholder || t('form.selectOption')}
-          className="w-full justify-between"
+          className="settings-select-trigger settings-rjsf-select-trigger w-full justify-between"
           disabled={disabled || readonly}
         />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[var(--radix-dropdown-menu-trigger-width)]">
+      <DropdownMenuContent className="settings-select-dropdown settings-rjsf-select-dropdown w-[var(--radix-dropdown-menu-trigger-width)]">
         {allOptions.map((option) => (
           <DropdownMenuItem
             key={String(option.value)}
+            className="settings-select-option settings-rjsf-select-option"
             onClick={() => handleChange(String(option.value))}
           >
             {option.label}
@@ -142,7 +143,7 @@ export const CheckboxWidget = (props: WidgetProps) => {
       onChange={(e) => handleChange(e.target.checked)}
       disabled={disabled || readonly}
       className={cn(
-        'h-4 w-4 rounded border-border bg-secondary text-brand focus:ring-brand focus:ring-offset-0',
+        'settings-checkbox-input settings-rjsf-checkbox h-4 w-4 rounded border-border bg-secondary text-brand focus:ring-brand focus:ring-offset-0',
         (disabled || readonly) && 'opacity-50 cursor-not-allowed'
       )}
     />
@@ -191,7 +192,7 @@ export const TextareaWidget = (props: WidgetProps) => {
       onFocus={handleFocus}
       rows={4}
       className={cn(
-        'w-full bg-secondary border border-border rounded-sm px-base py-half text-base text-high',
+        'settings-textarea settings-rjsf-textarea w-full bg-secondary border border-border rounded-sm px-base py-half text-base text-high',
         'placeholder:text-low placeholder:opacity-80 focus:outline-none focus:ring-1 focus:ring-brand',
         'resize-y',
         (disabled || readonly) && 'opacity-50 cursor-not-allowed'

@@ -224,6 +224,10 @@
 
 /* ANSI color classes for fancy-ansi */
 @layer components {
+  .legacy-design .settings-layout-section-content {
+    background: #ffffff !important;
+  }
+
   .ansi-red {
     @apply text-red-500;
   }

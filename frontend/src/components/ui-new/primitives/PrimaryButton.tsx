@@ -31,6 +31,10 @@ export function PrimaryButton({
   return (
     <button
       className={cn(
+        'primary-button',
+        variant === 'default' && 'primary-button-default',
+        variant === 'secondary' && 'primary-button-secondary',
+        variant === 'tertiary' && 'primary-button-tertiary',
         'rounded-sm px-base py-half text-cta h-cta flex gap-half items-center',
         variantStyles,
         className

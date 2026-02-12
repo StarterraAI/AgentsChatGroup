@@ -7,6 +7,12 @@ import { toPrettyCase } from '@/utils/string';
 import type { SessionMember } from '../types';
 import { agentStateLabels, agentStateDotClass } from '../constants';
 
+const truncateByChars = (value: string, maxChars: number): string => {
+  const chars = Array.from(value);
+  if (chars.length <= maxChars) return value;
+  return `${chars.slice(0, maxChars).join('')}...`;
+};
+
 export interface AiMembersSidebarProps {
   sessionMembers: SessionMember[];
   agentStates: Record<string, ChatSessionAgentState>;
@@ -21,6 +27,7 @@ export interface AiMembersSidebarProps {
   newMemberVariant: string;
   newMemberPrompt: string;
   newMemberWorkspace: string;
+  memberNameLengthError: string | null;
   onNameChange: (value: string) => void;
   onRunnerTypeChange: (value: string) => void;
   onVariantChange: (value: string) => void;
@@ -59,6 +66,7 @@ export function AiMembersSidebar({
   newMemberVariant,
   newMemberPrompt,
   newMemberWorkspace,
+  memberNameLengthError,
   onNameChange,
   onRunnerTypeChange,
   onVariantChange,
@@ -110,6 +118,10 @@ export function AiMembersSidebar({
             agentStates[agent.id] ?? ChatSessionAgentState.idle;
           const modelName = getModelName(agent.runner_type);
           const fullText = `${toPrettyCase(agent.runner_type)} | ${agentStateLabels[state]}${modelName ? ` | ${modelName}` : ''}`;
+          const modelStatusPreview = truncateByChars(fullText, 15);
+          const workspacePath = sessionAgent.workspace_path ?? '';
+          const shouldShowWorkspaceTooltip =
+            workspacePath.length > 48;
 
           return (
             <div
@@ -117,7 +129,7 @@ export function AiMembersSidebar({
               className="chat-session-member-card border border-border rounded-sm px-base py-half space-y-half"
             >
               <div className="flex items-center justify-between gap-base">
-                <div className="flex items-center gap-half min-w-0">
+                <div className="flex items-center gap-half min-w-0 flex-1">
                   <span
                     className={cn(
                       'size-2 rounded-full',
@@ -126,21 +138,14 @@ export function AiMembersSidebar({
                         'animate-pulse'
                     )}
                   />
-                  <div className="min-w-0 flex-1 overflow-hidden">
-                    <div className="text-sm text-normal truncate">
-                      @{agent.name}
-                    </div>
-                    <Tooltip content={fullText} side="bottom">
-                      <div className="chat-session-member-model text-xs text-low truncate cursor-default">
-                        {fullText}
-                      </div>
-                    </Tooltip>
+                  <div className="chat-session-member-name text-sm text-normal min-w-0 flex-1">
+                    @{agent.name}
                   </div>
                 </div>
                 <div className="chat-session-member-actions flex items-center gap-half text-xs">
                   <button
                     type="button"
-                    className="chat-session-member-action"
+                    className="chat-session-member-action workspace"
                     onClick={() => onOpenWorkspace(agent.id)}
                   >
                     Workspace
@@ -148,7 +153,7 @@ export function AiMembersSidebar({
                   <button
                     type="button"
                     className={cn(
-                      'chat-session-member-action',
+                      'chat-session-member-action edit',
                       isArchived && 'pointer-events-none opacity-50'
                     )}
                     onClick={() =>
@@ -173,9 +178,29 @@ export function AiMembersSidebar({
                   </button>
                 </div>
               </div>
-              {sessionAgent.workspace_path && (
-                <div className="chat-session-member-workspace text-xs text-low break-all">
-                  {sessionAgent.workspace_path}
+              <Tooltip content={fullText} side="bottom">
+                <div className="chat-session-member-model text-xs text-low cursor-default">
+                  <div className="chat-session-member-model-full">
+                    {fullText}
+                  </div>
+                  <div className="chat-session-member-model-truncated">
+                    {modelStatusPreview}
+                  </div>
+                </div>
+              </Tooltip>
+              {workspacePath && (
+                <div className="chat-session-member-workspace-row">
+                  {shouldShowWorkspaceTooltip ? (
+                    <Tooltip content={workspacePath} side="bottom">
+                      <div className="chat-session-member-workspace text-xs text-low truncate cursor-default">
+                        {workspacePath}
+                      </div>
+                    </Tooltip>
+                  ) : (
+                    <div className="chat-session-member-workspace text-xs text-low truncate">
+                      {workspacePath}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -192,7 +217,7 @@ export function AiMembersSidebar({
               disabled={!activeSessionId || isArchived}
             >
               Add AI member
-              <PlusIcon className="size-icon-xs" />
+              <PlusIcon className="size-icon-xs" weight="light" />
             </button>
           ) : (
             <div className="chat-session-member-form-panel border border-border rounded-sm p-base space-y-half">
@@ -213,6 +238,11 @@ export function AiMembersSidebar({
                     'text-sm text-normal focus:outline-none focus:ring-1 focus:ring-brand'
                   )}
                 />
+                {memberNameLengthError && (
+                  <div className="text-xs text-error">
+                    {memberNameLengthError}
+                  </div>
+                )}
               </div>
               <div className="space-y-half">
                 <label className="text-xs text-low">
@@ -306,7 +336,7 @@ export function AiMembersSidebar({
                   </label>
                   <button
                     type="button"
-                    className="text-xs text-brand hover:text-brand-hover"
+                    className="chat-session-member-expand-btn text-xs"
                     onClick={onExpandPromptEditor}
                   >
                     Expand
@@ -362,13 +392,17 @@ export function AiMembersSidebar({
                   value="Cancel"
                   onClick={onCancelMember}
                   disabled={isSavingMember}
-                  className="chat-session-member-btn"
+                  className="chat-session-member-btn cancel"
                 />
                 <PrimaryButton
                   value={editingMember ? 'Save' : 'Add'}
                   actionIcon={isSavingMember ? 'spinner' : PlusIcon}
                   onClick={onSaveMember}
-                  disabled={isSavingMember || isArchived}
+                  disabled={
+                    isSavingMember ||
+                    isArchived ||
+                    !!memberNameLengthError
+                  }
                   className="chat-session-member-btn"
                 />
               </div>

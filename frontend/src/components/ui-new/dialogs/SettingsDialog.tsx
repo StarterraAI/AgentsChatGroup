@@ -4,8 +4,6 @@ import { useTranslation } from 'react-i18next';
 import {
   GearIcon,
   GitBranchIcon,
-  BuildingsIcon,
-  CloudIcon,
   CpuIcon,
   PlugIcon,
   CaretLeftIcon,
@@ -19,7 +17,6 @@ import { cn } from '@/lib/utils';
 import { SettingsSection } from './settings/SettingsSection';
 import type {
   SettingsSectionType,
-  SettingsSectionInitialState,
 } from './settings/SettingsSection';
 import {
   SettingsDirtyProvider,
@@ -33,26 +30,21 @@ const SETTINGS_SECTIONS: {
 }[] = [
   { id: 'general', icon: GearIcon },
   { id: 'repos', icon: GitBranchIcon },
-  { id: 'organizations', icon: BuildingsIcon },
-  { id: 'remote-projects', icon: CloudIcon },
   { id: 'agents', icon: CpuIcon },
   { id: 'mcp', icon: PlugIcon },
 ];
 
 export interface SettingsDialogProps {
   initialSection?: SettingsSectionType;
-  initialState?: SettingsSectionInitialState[SettingsSectionType];
 }
 
 interface SettingsDialogContentProps {
   initialSection?: SettingsSectionType;
-  initialState?: SettingsSectionInitialState[SettingsSectionType];
   onClose: () => void;
 }
 
 function SettingsDialogContent({
   initialSection,
-  initialState,
   onClose,
 }: SettingsDialogContentProps) {
   const { t } = useTranslation('settings');
@@ -130,7 +122,7 @@ function SettingsDialogContent({
         {/* Dialog content - handles animation */}
         <div
           className={cn(
-            'h-full w-full flex overflow-hidden',
+            'settings-dialog-shell chat-settings-theme h-full w-full flex overflow-hidden',
             'bg-panel/95 backdrop-blur-sm shadow-lg',
             'animate-in fade-in-0 slide-in-from-bottom-4 duration-200',
             // Mobile: full screen, no rounded corners
@@ -142,7 +134,7 @@ function SettingsDialogContent({
           {/* Sidebar - hidden on mobile when showing content */}
           <div
             className={cn(
-              'bg-secondary/80 border-r border-border flex flex-col',
+              'settings-dialog-nav bg-secondary/80 border-r border-border flex flex-col',
               // Mobile: full width, hidden when showing content
               'w-full',
               mobileShowContent && 'hidden',
@@ -173,10 +165,10 @@ function SettingsDialogContent({
                     key={section.id}
                     onClick={() => handleSectionSelect(section.id)}
                     className={cn(
-                      'flex items-center gap-3 text-left px-3 py-2 rounded-sm text-sm transition-colors',
+                      'settings-dialog-nav-item flex items-center gap-3 text-left px-3 py-2 rounded-sm text-sm transition-colors border border-transparent',
                       isActive
-                        ? 'bg-brand/10 text-brand font-medium'
-                        : 'text-normal hover:bg-primary/10'
+                        ? 'settings-dialog-nav-item-active font-medium'
+                        : 'settings-dialog-nav-item-inactive'
                     )}
                   >
                     <Icon className="size-icon-sm shrink-0" weight="bold" />
@@ -191,7 +183,7 @@ function SettingsDialogContent({
           {/* Content - hidden on mobile when showing nav */}
           <div
             className={cn(
-              'flex-1 flex flex-col relative overflow-hidden',
+              'settings-dialog-main flex-1 flex flex-col relative overflow-hidden bg-white',
               // Mobile: full width, hidden when showing nav
               !mobileShowContent && 'hidden',
               // Desktop: always visible
@@ -217,11 +209,10 @@ function SettingsDialogContent({
               </button>
             </div>
             {/* Section content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="settings-dialog-content flex-1 overflow-y-auto bg-white">
               <SettingsSection
                 type={activeSection}
                 onClose={handleCloseWithConfirmation}
-                initialState={initialState}
               />
             </div>
           </div>
@@ -232,7 +223,7 @@ function SettingsDialogContent({
 }
 
 const SettingsDialogImpl = NiceModal.create<SettingsDialogProps>(
-  ({ initialSection, initialState }) => {
+  ({ initialSection }) => {
     const modal = useModal();
     const container = usePortalContainer();
 
@@ -248,7 +239,6 @@ const SettingsDialogImpl = NiceModal.create<SettingsDialogProps>(
       <SettingsDirtyProvider>
         <SettingsDialogContent
           initialSection={initialSection}
-          initialState={initialState}
           onClose={handleClose}
         />
       </SettingsDirtyProvider>,

@@ -28,8 +28,12 @@ export interface BadgeProps
     VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, ...props }: BadgeProps) {
+  const resolvedVariant = variant ?? 'default';
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    <div
+      className={cn('ui-badge', `ui-badge-${resolvedVariant}`, badgeVariants({ variant }), className)}
+      {...props}
+    />
   );
 }
 

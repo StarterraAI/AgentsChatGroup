@@ -16,7 +16,7 @@ export function FilePreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="relative w-full max-w-4xl bg-panel border border-border rounded-sm shadow-lg max-h-[90vh] flex flex-col">
+      <div className="chat-session-modal-surface relative w-full max-w-4xl border border-border rounded-sm shadow-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h3
             className="font-medium text-normal truncate max-w-[70%]"

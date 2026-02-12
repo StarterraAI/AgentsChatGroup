@@ -114,7 +114,7 @@ export function SettingsLayout() {
           </aside>
 
           {/* Main Content */}
-          <main className="flex-1 min-w-0">
+          <main className="settings-layout-section-content flex-1 min-w-0">
             <Outlet />
           </main>
         </div>

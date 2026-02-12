@@ -30,6 +30,9 @@ export function IconButton({
     <button
       type="button"
       className={cn(
+        'icon-button',
+        variant === 'default' && 'icon-button-default',
+        variant === 'tertiary' && 'icon-button-tertiary',
         'flex items-center justify-center p-half rounded-sm transition-colors',
         variantStyles,
         className

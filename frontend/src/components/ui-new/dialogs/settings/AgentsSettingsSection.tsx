@@ -485,7 +485,7 @@ export function AgentsSettingsSection() {
 
           {/* Config form */}
           {selectedExecutorType && selectedConfiguration && (
-            <div className="bg-secondary/50 border border-border rounded-sm p-4">
+            <div className="settings-inline-panel bg-secondary/50 border border-border rounded-sm p-4">
               <ExecutorConfigForm
                 key={`${selectedExecutorType}-${selectedConfiguration}`}
                 executor={selectedExecutorType}

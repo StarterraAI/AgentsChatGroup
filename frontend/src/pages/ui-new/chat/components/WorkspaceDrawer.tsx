@@ -33,7 +33,7 @@ export function WorkspaceDrawer({
   return (
     <div
       className={cn(
-        'absolute top-0 right-0 h-full w-[360px] bg-primary border-l border-border shadow-lg transition-transform z-50 flex flex-col',
+        'chat-session-workspace-drawer absolute top-0 right-0 h-full w-[360px] border-l border-border shadow-lg transition-transform z-50 flex flex-col',
         isOpen ? 'translate-x-0' : 'translate-x-full'
       )}
     >

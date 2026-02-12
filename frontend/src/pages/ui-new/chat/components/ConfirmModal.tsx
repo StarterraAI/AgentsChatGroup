@@ -26,6 +26,7 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   return (
     <Dialog
+      className="chat-session-modal-surface"
       open={isOpen}
       onOpenChange={(open) => {
         if (!open && !isLoading) {
