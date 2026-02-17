@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag (e.g., v1.2.3)"
+        description: 'Release tag (e.g., v1.2.3)'
         required: true
       release_id:
-        description: "GitHub release ID"
+        description: 'GitHub release ID'
         required: true
 
 concurrency:
@@ -19,7 +19,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
-  id-token: write  # Required for OIDC trusted publishing
+  id-token: write
 
 env:
   NODE_VERSION: 22
@@ -28,12 +28,26 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Only run for main app releases (not remote-v* tags) that were converted from pre-release
-    if: github.event.release.prerelease == false && !startsWith(github.event.release.tag_name, 'remote-')
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.release.prerelease == false && !startsWith(github.event.release.tag_name, 'remote-'))
     steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "release_id=${{ inputs.release_id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "release_id=${{ github.event.release.id }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag_name }}
+          ref: ${{ steps.meta.outputs.ref }}
+          fetch-depth: 0
 
       - name: Setup Node
         uses: ./.github/actions/setup-node
@@ -44,15 +58,13 @@ jobs:
       - name: Download release assets
         uses: actions/github-script@v8
         env:
-          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_ID: ${{ steps.meta.outputs.release_id }}
         with:
           script: |
             const fs = require('fs');
             const path = require('path');
 
-            const releaseId = context.payload.release?.id || process.env.RELEASE_ID;
-            console.log("releaseId:", releaseId);
-
+            const releaseId = process.env.RELEASE_ID;
             if (!releaseId) {
               core.setFailed('No release ID found.');
               return;
@@ -63,16 +75,13 @@ jobs:
               repo: context.repo.repo,
               release_id: releaseId
             });
-            
-            // Find the .tgz file
-            const tgzAsset = release.data.assets.find(asset => asset.name.endsWith('.tgz'));
-            
+
+            const tgzAsset = release.data.assets.find((asset) => asset.name.endsWith('.tgz'));
             if (!tgzAsset) {
               core.setFailed('No .tgz file found in release assets');
               return;
             }
-            
-            // Download the asset
+
             const response = await github.rest.repos.getReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -81,53 +90,44 @@ jobs:
                 Accept: 'application/octet-stream'
               }
             });
-            
-            // Save to agents-chatgroup-npx directory
+
+            fs.mkdirSync('agents-chatgroup-npx', { recursive: true });
             const filePath = path.join('agents-chatgroup-npx', tgzAsset.name);
             fs.writeFileSync(filePath, Buffer.from(response.data));
-            
+
             console.log(`Downloaded ${tgzAsset.name} to ${filePath}`);
-            
-            // Set output for next step
-            core.setOutput('package-file', filePath);
             core.setOutput('package-name', tgzAsset.name);
 
       - name: Verify package integrity
         id: verify
+        shell: bash
         run: |
+          set -euo pipefail
           cd agents-chatgroup-npx
-          
-          # List files to confirm download
+
           ls -la *.tgz
-          
-          # Verify the package can be read
-          npm pack --dry-run || echo "Note: This is expected to show differences since we're using the pre-built package"
-          
-          # Extract package name from the downloaded file
+          npm pack --dry-run || echo 'Dry-run pack check reported differences (non-blocking).'
+
           PACKAGE_FILE=$(ls *.tgz | head -n1)
-          echo "package-file=$PACKAGE_FILE" >> $GITHUB_OUTPUT
+          echo "package-file=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
+        shell: bash
         run: |
+          set -euo pipefail
           cd agents-chatgroup-npx
 
-          # Publish the exact same package that was tested
-          PACKAGE_FILE="${{ steps.verify.outputs.package-file }}"
-
+          PACKAGE_FILE='${{ steps.verify.outputs.package-file }}'
           echo "Publishing $PACKAGE_FILE to npm..."
           npm publish "$PACKAGE_FILE" --provenance --access public
-
-          echo "✅ Successfully published to npm!"
 
       - name: Update release description
         uses: actions/github-script@v8
         env:
-          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_ID: ${{ steps.meta.outputs.release_id }}
         with:
           script: |
-            const releaseId = context.payload.release?.id || process.env.RELEASE_ID;;
-
-            // Fetch the release to get the current body
+            const releaseId = process.env.RELEASE_ID;
             const release = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -139,5 +139,5 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               release_id: releaseId,
-              body: currentBody + '\n\n✅ **Published to npm registry**'
+              body: currentBody + '\n\nPublished to npm registry'
             });
