@@ -2467,7 +2467,7 @@ packages:
   decode-formdata@0.9.0:
     resolution: {integrity: sha512-q5uwOjR3Um5YD+ZWPOF/1sGHVW9A5rCrRwITQChRXlmPkxDFBqCm4jNTIVdGHNH9OnR+V9MoZVgRhsFb+ARbUw==}
 
-  deep-is@0.1.0:
+  deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
 
   dequal@2.0.3:
@@ -2859,7 +2859,7 @@ packages:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
     engines: {node: '>=6'}
 
-  imurmurhash@0.1.0:
+  imurmurhash@0.1.4:
     resolution: {integrity: sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA==}
     engines: {node: '>=0.8.19'}
 
@@ -6178,7 +6178,7 @@ snapshots:
 
   decode-formdata@0.9.0: {}
 
-  deep-is@0.1.0: {}
+  deep-is@0.1.4: {}
 
   dequal@2.0.3: {}
 
@@ -6384,7 +6384,7 @@ snapshots:
       globals: 13.24.0
       graphemer: 1.4.0
       ignore: 5.3.2
-      imurmurhash: 0.1.0
+      imurmurhash: 0.1.4
       is-glob: 4.0.3
       is-path-inside: 3.0.3
       js-yaml: 4.1.0
@@ -6619,7 +6619,7 @@ snapshots:
       parent-module: 1.0.1
       resolve-from: 4.0.0
 
-  imurmurhash@0.1.0: {}
+  imurmurhash@0.1.4: {}
 
   inflight@1.0.6:
     dependencies:
@@ -6855,7 +6855,7 @@ snapshots:
 
   optionator@0.9.4:
     dependencies:
-      deep-is: 0.1.0
+      deep-is: 0.1.4
       fast-levenshtein: 2.0.6
       levn: 0.4.1
       prelude-ls: 1.2.1
