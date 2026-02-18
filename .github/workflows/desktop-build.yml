@@ -35,7 +35,7 @@ env:
 jobs:
   tauri-build:
     name: Build ${{ matrix.platform }}
-    if: ${{ inputs.platform == 'all' || inputs.platform == matrix.platform }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' || inputs.platform == matrix.platform) }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
