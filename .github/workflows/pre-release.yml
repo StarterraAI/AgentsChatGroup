@@ -31,7 +31,7 @@ env:
 
 jobs:
   bump-version:
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     outputs:
       new_tag: ${{ steps.version.outputs.new_tag }}
       new_version: ${{ steps.version.outputs.new_version }}
@@ -152,7 +152,7 @@ jobs:
 
   build-frontend:
     needs: bump-version
-    runs-on: ubuntu-latest-x64-l
+    runs-on: ubuntu-latest
     env:
       VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY: ${{ secrets.PUBLIC_REACT_VIRTUOSO_LICENSE_KEY }}
       VITE_VK_SHARED_API_BASE: ${{ secrets.VK_SHARED_API_BASE }}
@@ -207,22 +207,22 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest-x64-l
+            os: ubuntu-latest
             name: linux-x64
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest-arm64-l
+            os: ubuntu-latest
             name: linux-arm64
           - target: x86_64-pc-windows-msvc
-            os: ubuntu-latest-x64-l
+            os: ubuntu-latest
             name: windows-x64
           - target: x86_64-apple-darwin
-            os: macos-15-xlarge
+            os: macos-13
             name: macos-x64
           - target: aarch64-apple-darwin
-            os: macos-15-xlarge
+            os: macos-14
             name: macos-arm64
           - target: aarch64-pc-windows-msvc
-            os: ubuntu-latest-x64-l
+            os: ubuntu-latest
             name: windows-arm64
     env:
       CARGO_INCREMENTAL: "0"
@@ -488,7 +488,7 @@ jobs:
 
   package-cli:
     needs: [bump-version, build-frontend, build-backend]
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     strategy:
       # NOTE: This matrix must be kept in sync with build-backend job above
       # GitHub Actions doesn't support YAML anchors, so duplication is unavoidable
@@ -580,7 +580,7 @@ jobs:
 
   upload-to-r2:
     needs: [bump-version, package-cli]
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
@@ -685,7 +685,7 @@ jobs:
             artifact_paths: |
               src-tauri/target/release/bundle/msi/*.msi
           - platform: macos
-            os: macos-15-xlarge
+            os: macos-latest
             artifact_name: desktop-installer-macos
             artifact_paths: |
               src-tauri/target/release/bundle/dmg/agents-chatgroup-signed.dmg
@@ -819,7 +819,7 @@ jobs:
 
   create-prerelease:
     needs: [bump-version, build-frontend, upload-to-r2, build-desktop-installers]
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
