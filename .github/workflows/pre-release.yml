@@ -196,18 +196,6 @@ jobs:
           VITE_POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           VITE_POSTHOG_API_ENDPOINT: ${{ secrets.POSTHOG_API_ENDPOINT }}
 
-      - name: Create Sentry release
-        uses: getsentry/action-release@v3
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-        with:
-          release: ${{ needs.bump-version.outputs.new_version }}
-          environment: production
-          sourcemaps: "./frontend/dist"
-          ignore_missing: true
-
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v6
         with:
