@@ -354,6 +354,10 @@ jobs:
           # (e.g. aws-lc-sys for x86_64-unknown-linux-gnu) and fail on GCC-style flags.
           export HOST_CC=clang
           export HOST_CXX=clang++
+          export TARGET_CC_x86_64_unknown_linux_gnu=clang
+          export TARGET_CXX_x86_64_unknown_linux_gnu=clang++
+          export AWS_LC_SYS_TARGET_CC_x86_64_unknown_linux_gnu=clang
+          export AWS_LC_SYS_TARGET_CXX_x86_64_unknown_linux_gnu=clang++
           export CC_x86_64_unknown_linux_gnu=clang
           export CXX_x86_64_unknown_linux_gnu=clang++
 
