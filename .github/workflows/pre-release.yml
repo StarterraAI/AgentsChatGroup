@@ -583,15 +583,40 @@ jobs:
           retention-days: 1
 
   upload-to-r2:
-    if: ${{ secrets.R2_BINARIES_ACCESS_KEY_ID != '' && secrets.R2_BINARIES_SECRET_ACCESS_KEY != '' && secrets.R2_BINARIES_ENDPOINT != '' && secrets.R2_BINARIES_BUCKET != '' }}
     needs: [bump-version, package-cli]
     runs-on: ubuntu-latest
     steps:
+      - name: Check R2 secrets
+        id: r2_guard
+        shell: bash
+        env:
+          R2_BINARIES_ACCESS_KEY_ID: ${{ secrets.R2_BINARIES_ACCESS_KEY_ID }}
+          R2_BINARIES_SECRET_ACCESS_KEY: ${{ secrets.R2_BINARIES_SECRET_ACCESS_KEY }}
+          R2_BINARIES_ENDPOINT: ${{ secrets.R2_BINARIES_ENDPOINT }}
+          R2_BINARIES_BUCKET: ${{ secrets.R2_BINARIES_BUCKET }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for key in R2_BINARIES_ACCESS_KEY_ID R2_BINARIES_SECRET_ACCESS_KEY R2_BINARIES_ENDPOINT R2_BINARIES_BUCKET; do
+            if [ -z "${!key}" ]; then
+              echo "::warning::Missing secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "::notice::Skipping R2 upload because required secrets are missing."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.r2_guard.outputs.enabled == 'true'
         with:
           ref: ${{ needs.bump-version.outputs.new_tag }}
 
       - name: Download all platform packages
+        if: steps.r2_guard.outputs.enabled == 'true'
         uses: actions/download-artifact@v7
         with:
           pattern: npx-platform-*
@@ -599,17 +624,20 @@ jobs:
           merge-multiple: true
 
       - name: List downloaded binaries
+        if: steps.r2_guard.outputs.enabled == 'true'
         run: |
           echo "Downloaded binaries:"
           find binaries/
 
       - name: Configure AWS CLI for R2
+        if: steps.r2_guard.outputs.enabled == 'true'
         run: |
           aws configure set aws_access_key_id ${{ secrets.R2_BINARIES_ACCESS_KEY_ID }}
           aws configure set aws_secret_access_key ${{ secrets.R2_BINARIES_SECRET_ACCESS_KEY }}
           aws configure set default.region auto
 
       - name: Generate manifest and upload to R2
+        if: steps.r2_guard.outputs.enabled == 'true'
         run: |
           TAG="${{ needs.bump-version.outputs.new_tag }}"
           ENDPOINT="${{ secrets.R2_BINARIES_ENDPOINT }}"
@@ -667,6 +695,7 @@ jobs:
             --endpoint-url "$ENDPOINT" --content-type "application/json"
 
       - name: Verify upload
+        if: steps.r2_guard.outputs.enabled == 'true'
         run: |
           TAG="${{ needs.bump-version.outputs.new_tag }}"
           ENDPOINT="${{ secrets.R2_BINARIES_ENDPOINT }}"
