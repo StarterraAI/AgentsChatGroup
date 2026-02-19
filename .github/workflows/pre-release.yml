@@ -583,6 +583,7 @@ jobs:
           retention-days: 1
 
   upload-to-r2:
+    if: ${{ secrets.R2_BINARIES_ACCESS_KEY_ID != '' && secrets.R2_BINARIES_SECRET_ACCESS_KEY != '' && secrets.R2_BINARIES_ENDPOINT != '' && secrets.R2_BINARIES_BUCKET != '' }}
     needs: [bump-version, package-cli]
     runs-on: ubuntu-latest
     steps:
@@ -822,7 +823,7 @@ jobs:
           rm -f certificate.p12 app_store_key.json
 
   create-prerelease:
-    needs: [bump-version, build-frontend, upload-to-r2, build-desktop-installers]
+    needs: [bump-version, build-frontend, build-desktop-installers]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -858,12 +859,20 @@ jobs:
       - name: Setup Node for npm pack
         uses: ./.github/actions/setup-node
 
-      - name: Inject R2 URL and tag, then Pack
+      - name: Prepare NPX package and pack (R2 optional)
         run: |
           cd agents-chatgroup-npx
-          # Replace placeholders with actual values
-          sed -i "s|__R2_PUBLIC_URL__|${{ secrets.R2_BINARIES_PUBLIC_URL }}|g" bin/download.js
-          sed -i "s|__BINARY_TAG__|${{ needs.bump-version.outputs.new_tag }}|g" bin/download.js
+          if [ -f bin/download.js ]; then
+            if [ -n "${{ secrets.R2_BINARIES_PUBLIC_URL }}" ]; then
+              echo "Injecting R2 URL into bin/download.js"
+              sed -i "s|__R2_PUBLIC_URL__|${{ secrets.R2_BINARIES_PUBLIC_URL }}|g" bin/download.js
+            else
+              echo "R2_BINARIES_PUBLIC_URL is empty; skipping R2 URL injection"
+            fi
+            sed -i "s|__BINARY_TAG__|${{ needs.bump-version.outputs.new_tag }}|g" bin/download.js
+          else
+            echo "bin/download.js not found; skipping R2/tag injection"
+          fi
           npm pack
 
       - name: Create GitHub Pre-Release
