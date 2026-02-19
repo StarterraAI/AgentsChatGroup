@@ -19,7 +19,8 @@
       "identifier": "com.agents-chatgroup.desktop",
       "icon": [
         "icons/icon.png",
-        "icons/icon.icns"
+        "icons/icon.icns",
+        "icons/icon.ico"
       ],
       "windows": {
         "wix": {
