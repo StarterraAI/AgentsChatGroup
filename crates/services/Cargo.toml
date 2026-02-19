@@ -1,7 +1,7 @@
 [package]
 name = "services"
-version = "0.1.0"
-edition = "2026"
+version = "0.1.1-main.0"
+edition = "2024"
 
 [features]
 default = []

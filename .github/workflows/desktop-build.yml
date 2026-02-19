@@ -35,31 +35,51 @@ env:
 jobs:
   tauri-build:
     name: Build ${{ matrix.platform }}
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' || inputs.platform == matrix.platform) }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform == 'macos' && 'macos-latest' || matrix.platform == 'windows' && 'windows-latest' || 'ubuntu-22.04' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: macos
-            os: macos-latest
-            artifact_name: desktop-macos
-            artifact_paths: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-          - platform: windows
-            os: windows-latest
-            artifact_name: desktop-windows
-            artifact_paths: |
-              src-tauri/target/release/bundle/msi/*.msi
-          - platform: linux
-            os: ubuntu-22.04
-            artifact_name: desktop-linux
-            artifact_paths: |
-              src-tauri/target/release/bundle/appimage/*.AppImage
-              src-tauri/target/release/bundle/deb/*.deb
+        platform: ${{ fromJSON(inputs.platform == 'all' && '["macos","windows","linux"]' || format('["{0}"]', inputs.platform)) }}
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Resolve artifact metadata
+        id: artifact_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.platform }}" in
+            macos)
+              echo "name=desktop-macos" >> "$GITHUB_OUTPUT"
+              {
+                echo "paths<<EOF"
+                echo "src-tauri/target/release/bundle/dmg/*.dmg"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            windows)
+              echo "name=desktop-windows" >> "$GITHUB_OUTPUT"
+              {
+                echo "paths<<EOF"
+                echo "src-tauri/target/release/bundle/msi/*.msi"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            linux)
+              echo "name=desktop-linux" >> "$GITHUB_OUTPUT"
+              {
+                echo "paths<<EOF"
+                echo "src-tauri/target/release/bundle/appimage/*.AppImage"
+                echo "src-tauri/target/release/bundle/deb/*.deb"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported platform: ${{ matrix.platform }}"
+              exit 1
+              ;;
+          esac
 
       - name: Setup Node
         uses: ./.github/actions/setup-node
@@ -176,7 +196,7 @@ jobs:
         if: runner.os == 'macOS' && inputs.macos_sign_and_notarize == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact_name }}
+          name: ${{ steps.artifact_meta.outputs.name }}
           path: |
             src-tauri/target/release/bundle/dmg/agents-chatgroup-signed.dmg
           if-no-files-found: error
@@ -186,8 +206,8 @@ jobs:
         if: runner.os != 'macOS' || inputs.macos_sign_and_notarize != 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_paths }}
+          name: ${{ steps.artifact_meta.outputs.name }}
+          path: ${{ steps.artifact_meta.outputs.paths }}
           if-no-files-found: error
           retention-days: 7
 
