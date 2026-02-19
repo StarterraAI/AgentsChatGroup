@@ -13,6 +13,11 @@ on:
           - minor
           - major
           - prerelease
+      publish_to_npm:
+        description: "Publish agents-chatgroup-npx package to npm"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: release-${{ github.ref_name }} # allow concurrent prerelease from different branches
@@ -930,13 +935,131 @@ jobs:
           fi
           npm pack
 
+      - name: Publish NPX package to npm
+        id: npm_publish
+        if: ${{ github.event.inputs.publish_to_npm == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::Missing NPM_TOKEN secret"
+            exit 1
+          fi
+
+          cd agents-chatgroup-npx
+          tarball=$(ls -1t agents-chatgroup-*.tgz | head -n 1)
+          if [ -z "${tarball:-}" ]; then
+            echo "::error::No npm tarball found to publish"
+            exit 1
+          fi
+          npm publish "$tarball" --access public
+
+      - name: Generate simple changelog summary
+        id: changelog
+        uses: actions/github-script@v7
+        env:
+          NPM_PUBLISHED: ${{ github.event.inputs.publish_to_npm == 'true' && steps.npm_publish.outcome == 'success' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const currentTag = '${{ needs.bump-version.outputs.new_tag }}';
+            const npmPublished = process.env.NPM_PUBLISHED === 'true';
+
+            const { data: tags } = await github.rest.repos.listTags({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            const previousTag = tags.find((tag) => tag.name !== currentTag)?.name ?? null;
+
+            const contributors = new Set();
+            const pullRequests = new Map();
+
+            if (previousTag) {
+              const { data: compare } =
+                await github.rest.repos.compareCommitsWithBasehead({
+                  owner,
+                  repo,
+                  basehead: `${previousTag}...${currentTag}`,
+                });
+
+              const prNumbers = new Set();
+              for (const commit of compare.commits ?? []) {
+                const message = commit.commit?.message ?? '';
+                for (const match of message.matchAll(/#(\\d+)/g)) {
+                  prNumbers.add(Number(match[1]));
+                }
+                if (commit.author?.login) {
+                  contributors.add(`@${commit.author.login}`);
+                }
+              }
+
+              for (const number of prNumbers) {
+                try {
+                  const { data: pr } = await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: number,
+                  });
+                  if (!pr.merged_at) continue;
+                  pullRequests.set(pr.number, pr);
+                  if (pr.user?.login) {
+                    contributors.add(`@${pr.user.login}`);
+                  }
+                } catch (_error) {
+                  // Ignore non-PR numbers from commit messages.
+                }
+              }
+            }
+
+            const lines = ["## What's Changed"];
+            if (pullRequests.size > 0) {
+              for (const pr of [...pullRequests.values()].sort((a, b) => a.number - b.number)) {
+                lines.push(`- ${pr.title} by @${pr.user?.login ?? 'unknown'} in #${pr.number}`);
+              }
+            } else {
+              lines.push('- No pull requests found in this release range.');
+            }
+
+            lines.push('');
+            if (previousTag) {
+              lines.push(`Full Changelog: https://github.com/${owner}/${repo}/compare/${previousTag}...${currentTag}`);
+            } else {
+              lines.push(`Full Changelog: Initial release (${currentTag})`);
+            }
+
+            lines.push('', '## Contributors');
+            const sortedContributors = [...contributors].sort((a, b) => a.localeCompare(b));
+            if (sortedContributors.length > 0) {
+              for (const contributor of sortedContributors) {
+                lines.push(`- ${contributor}`);
+              }
+            } else {
+              lines.push('- None');
+            }
+
+            if (npmPublished) {
+              lines.push('', '✅ Published to npm registry');
+            }
+
+            const body = lines.join('\n');
+            core.setOutput('body', body);
+            await core.summary
+              .addHeading('Release Changelog Preview')
+              .addCodeBlock(body, 'markdown')
+              .write();
+
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.bump-version.outputs.new_tag }}
           name: Pre-release ${{ needs.bump-version.outputs.new_tag }}
           prerelease: true
-          generate_release_notes: true
+          generate_release_notes: false
+          body: ${{ steps.changelog.outputs.body }}
           files: |
             agents-chatgroup-${{ needs.bump-version.outputs.new_tag }}.zip
             agents-chatgroup-npx/agents-chatgroup-*.tgz
