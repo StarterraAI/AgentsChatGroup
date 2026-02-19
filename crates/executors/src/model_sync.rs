@@ -191,5 +191,9 @@ fn with_model(config: &CodingAgent, model: &str) -> Option<CodingAgent> {
 }
 
 fn auto_variant_key(model: &str) -> String {
-    format!("{}{}", AUTO_MODEL_VARIANT_PREFIX, canonical_variant_key(model))
+    format!(
+        "{}{}",
+        AUTO_MODEL_VARIANT_PREFIX,
+        canonical_variant_key(model)
+    )
 }

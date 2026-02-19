@@ -150,13 +150,11 @@ impl ChatMessage {
     ) -> Result<u64, sqlx::Error> {
         let meta_str = serde_json::to_string(&meta).unwrap_or_default();
         let id_str = id.to_string();
-        let result = sqlx::query(
-            "UPDATE chat_messages SET meta = $1 WHERE id = $2"
-        )
-        .bind(meta_str)
-        .bind(id_str)
-        .execute(pool)
-        .await?;
+        let result = sqlx::query("UPDATE chat_messages SET meta = $1 WHERE id = $2")
+            .bind(meta_str)
+            .bind(id_str)
+            .execute(pool)
+            .await?;
         Ok(result.rows_affected())
     }
 }

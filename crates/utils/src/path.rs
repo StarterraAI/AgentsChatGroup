@@ -1,4 +1,4 @@
-﻿use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 /// Directory name for storing images in worktrees
 pub const VIBE_IMAGES_DIR: &str = ".vibe-images";
@@ -177,4 +177,3 @@ mod tests {
         );
     }
 }
-

@@ -1,4 +1,4 @@
-﻿use std::{path::Path, str::FromStr};
+use std::{path::Path, str::FromStr};
 
 use executors::{command::CommandBuilder, executors::ExecutorError};
 use serde::{Deserialize, Serialize};
@@ -260,4 +260,3 @@ impl EditorConfig {
         }
     }
 }
-

@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     fs::{self, OpenOptions},
     io::{self, Result, Write},
     path::PathBuf,
@@ -179,4 +179,3 @@ pub struct SessionMetadata {
     pub parent_session: Option<String>,
     pub tags: Vec<String>,
 }
-

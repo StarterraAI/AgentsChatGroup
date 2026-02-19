@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -520,5 +520,3 @@ fn squash_merge_libgit2_sets_author_without_user() {
         assert_eq!(email.as_deref(), Some("noreply@agents-chatgroup.com"));
     }
 }
-
-

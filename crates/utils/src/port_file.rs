@@ -1,4 +1,4 @@
-﻿use std::{env, path::PathBuf};
+use std::{env, path::PathBuf};
 
 use tokio::fs;
 
@@ -24,4 +24,3 @@ pub async fn read_port_file(app_name: &str) -> std::io::Result<u16> {
 
     Ok(port)
 }
-

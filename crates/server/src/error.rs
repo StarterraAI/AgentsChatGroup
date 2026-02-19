@@ -392,16 +392,13 @@ impl IntoResponse for ApiError {
             ApiError::Chat(ChatServiceError::SessionNotFound) => {
                 ErrorInfo::not_found("ChatServiceError", "Chat session not found.")
             }
-            ApiError::Chat(ChatServiceError::SessionArchived) => ErrorInfo::conflict(
-                "ChatServiceError",
-                "Chat session is archived.",
-            ),
+            ApiError::Chat(ChatServiceError::SessionArchived) => {
+                ErrorInfo::conflict("ChatServiceError", "Chat session is archived.")
+            }
             ApiError::Chat(ChatServiceError::Validation(msg)) => {
                 ErrorInfo::bad_request("ChatServiceError", msg.clone())
             }
-            ApiError::Chat(ChatServiceError::Io(_)) => {
-                ErrorInfo::internal("ChatServiceError")
-            }
+            ApiError::Chat(ChatServiceError::Io(_)) => ErrorInfo::internal("ChatServiceError"),
             ApiError::ChatRunner(ChatRunnerError::AgentNotFound(_)) => {
                 ErrorInfo::not_found("ChatRunnerError", "Chat agent not found.")
             }

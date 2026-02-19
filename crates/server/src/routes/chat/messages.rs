@@ -6,29 +6,29 @@ use axum::{
     http::{StatusCode, header},
     response::{Json as ResponseJson, Response},
 };
-use db::models::chat_message::{ChatMessage, ChatSenderType};
-use db::models::chat_session::ChatSession;
+use db::models::{
+    chat_message::{ChatMessage, ChatSenderType},
+    chat_session::ChatSession,
+};
 use deployment::Deployment;
 use serde::Deserialize;
 use services::services::chat::ChatAttachmentMeta;
-use ts_rs::TS;
-use utils::assets::asset_dir;
-use utils::response::ApiResponse;
-use uuid::Uuid;
 use tokio::{fs, fs::File};
 use tokio_util::io::ReaderStream;
+use ts_rs::TS;
+use utils::{assets::asset_dir, response::ApiResponse};
+use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError};
 
 const ALLOWED_TEXT_EXTENSIONS: &[&str] = &[
-    ".txt", ".csv", ".md", ".json", ".xml", ".yaml", ".yml", ".html", ".htm",
-    ".css", ".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h",
-    ".hpp", ".rb", ".php", ".go", ".rs", ".sql", ".sh", ".bash", ".svg",
+    ".txt", ".csv", ".md", ".json", ".xml", ".yaml", ".yml", ".html", ".htm", ".css", ".js", ".ts",
+    ".jsx", ".tsx", ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php", ".go", ".rs",
+    ".sql", ".sh", ".bash", ".svg",
 ];
 
-const ALLOWED_IMAGE_EXTENSIONS: &[&str] = &[
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
-];
+const ALLOWED_IMAGE_EXTENSIONS: &[&str] =
+    &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
 
 #[derive(Debug, Deserialize, TS)]
 pub struct ChatMessageListQuery {
@@ -130,7 +130,10 @@ pub async fn create_message(
     )
     .await?;
 
-    deployment.chat_runner().handle_message(&session, &message).await;
+    deployment
+        .chat_runner()
+        .handle_message(&session, &message)
+        .await;
 
     Ok(ResponseJson(ApiResponse::success(message)))
 }
@@ -241,7 +244,10 @@ pub async fn upload_message_attachments(
     )
     .await?;
 
-    deployment.chat_runner().handle_message(&session, &message).await;
+    deployment
+        .chat_runner()
+        .handle_message(&session, &message)
+        .await;
 
     Ok(ResponseJson(ApiResponse::success(message)))
 }

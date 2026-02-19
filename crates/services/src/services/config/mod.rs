@@ -1,4 +1,4 @@
-﻿use std::path::PathBuf;
+use std::path::PathBuf;
 
 use thiserror::Error;
 
@@ -63,5 +63,3 @@ pub async fn save_config_to_file(
     std::fs::write(config_path, raw_config)?;
     Ok(())
 }
-
-

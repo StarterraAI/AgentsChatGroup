@@ -1,10 +1,8 @@
-use axum::{
-    Extension, Json,
-    extract::State,
-    response::Json as ResponseJson,
+use axum::{Extension, Json, extract::State, response::Json as ResponseJson};
+use db::models::{
+    chat_agent::{ChatAgent, CreateChatAgent, UpdateChatAgent},
+    chat_session_agent::ChatSessionAgent,
 };
-use db::models::chat_agent::{ChatAgent, CreateChatAgent, UpdateChatAgent};
-use db::models::chat_session_agent::ChatSessionAgent;
 use deployment::Deployment;
 use utils::response::ApiResponse;
 use uuid::Uuid;

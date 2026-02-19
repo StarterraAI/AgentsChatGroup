@@ -1,4 +1,4 @@
-﻿use rmcp::{ServiceExt, transport::stdio};
+use rmcp::{ServiceExt, transport::stdio};
 use server::mcp::task_server::TaskServer;
 use tracing_subscriber::{EnvFilter, prelude::*};
 use utils::{
@@ -76,4 +76,3 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })
 }
-

@@ -1,4 +1,4 @@
-﻿use std::path::PathBuf;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -45,4 +45,3 @@ impl Config {
         std::fs::write(&path, contents)
     }
 }
-

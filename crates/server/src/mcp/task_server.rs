@@ -1,4 +1,4 @@
-﻿use std::{future::Future, str::FromStr};
+use std::{future::Future, str::FromStr};
 
 use db::models::{
     project::Project,
@@ -1021,5 +1021,3 @@ impl ServerHandler for TaskServer {
         }
     }
 }
-
-

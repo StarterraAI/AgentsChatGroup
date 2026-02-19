@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -511,4 +511,3 @@ mod tests {
         );
     }
 }
-

@@ -12,8 +12,14 @@ use super::filesystem::{DirectoryEntry, FilesystemError};
 
 /// QA repository URLs and names
 const QA_REPOS: &[(&str, &str)] = &[
-    ("internal-qa-1", "https://github.com/StarterraAI/internal-qa-1"),
-    ("internal-qa-2", "https://github.com/StarterraAI/internal-qa-2"),
+    (
+        "internal-qa-1",
+        "https://github.com/StarterraAI/internal-qa-1",
+    ),
+    (
+        "internal-qa-2",
+        "https://github.com/StarterraAI/internal-qa-2",
+    ),
 ];
 
 /// Persistent directory for QA repos - survives server restarts

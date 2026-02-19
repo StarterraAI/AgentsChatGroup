@@ -4,10 +4,7 @@ use db::models::{
     workspace::{Workspace, WorkspaceError},
 };
 use deployment::Deployment;
-use executors::{
-    actions::ExecutorAction,
-    executors::kimi::KimiCode,
-};
+use executors::{actions::ExecutorAction, executors::kimi::KimiCode};
 use services::services::container::ContainerService;
 use uuid::Uuid;
 
@@ -41,21 +38,21 @@ pub async fn run_kimi_setup(
         .ensure_container_exists(workspace)
         .await?;
 
-    let session = match Session::find_latest_by_workspace_id(&deployment.db().pool, workspace.id).await?
-    {
-        Some(s) => s,
-        None => {
-            Session::create(
-                &deployment.db().pool,
-                &CreateSession {
-                    executor: Some("kimi_code".to_string()),
-                },
-                Uuid::new_v4(),
-                workspace.id,
-            )
-            .await?
-        }
-    };
+    let session =
+        match Session::find_latest_by_workspace_id(&deployment.db().pool, workspace.id).await? {
+            Some(s) => s,
+            None => {
+                Session::create(
+                    &deployment.db().pool,
+                    &CreateSession {
+                        executor: Some("kimi_code".to_string()),
+                    },
+                    Uuid::new_v4(),
+                    workspace.id,
+                )
+                .await?
+            }
+        };
 
     let execution_process = deployment
         .container()

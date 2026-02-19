@@ -1,4 +1,4 @@
-﻿use directories::ProjectDirs;
+use directories::ProjectDirs;
 use rust_embed::RustEmbed;
 
 const PROJECT_ROOT: &str = env!("CARGO_MANIFEST_DIR");
@@ -43,4 +43,3 @@ pub struct SoundAssets;
 #[derive(RustEmbed)]
 #[folder = "../../assets/scripts"]
 pub struct ScriptAssets;
-

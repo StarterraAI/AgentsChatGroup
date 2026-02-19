@@ -1,4 +1,4 @@
-﻿use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path};
 
 use chrono::{DateTime, Utc};
 use git2::{
@@ -1951,5 +1951,3 @@ impl GitService {
         Ok(stats)
     }
 }
-
-

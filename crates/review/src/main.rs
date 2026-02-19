@@ -1,4 +1,4 @@
-﻿mod api;
+mod api;
 mod archive;
 mod claude_session;
 mod config;
@@ -256,4 +256,3 @@ async fn run(args: Args) -> Result<(), ReviewError> {
 
     Ok(())
 }
-

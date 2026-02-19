@@ -1,4 +1,6 @@
-﻿use anyhow::{self, Error as AnyhowError};
+use std::time::Duration;
+
+use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
 use executors::{
     env::{ExecutionEnv, RepoContext},
@@ -7,7 +9,6 @@ use executors::{
 use server::{DeploymentImpl, routes};
 use services::services::container::ContainerService;
 use sqlx::Error as SqlxError;
-use std::time::Duration;
 use strip_ansi_escapes::strip;
 use thiserror::Error;
 use tracing_subscriber::{EnvFilter, prelude::*};
@@ -200,4 +201,3 @@ pub async fn perform_cleanup_actions(deployment: &DeploymentImpl) {
         .await
         .expect("Failed to cleanly kill running execution processes");
 }
-

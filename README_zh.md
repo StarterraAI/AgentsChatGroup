@@ -261,6 +261,15 @@ pnpm desktop:build
 
 Windows PowerShell环境下无法运行`pnpm run dev`，使用以下命令来运行前后端程序
 
+```
+# 1. 克隆仓库
+git clone https://github.com/StarterraAI/AgentsChatGroup.git
+cd agents-chatgroup
+
+# 2. 安装依赖
+pnpm i
+```
+
 **Terminal A (backend)**
 
 ```powershell

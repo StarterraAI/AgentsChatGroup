@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
@@ -606,4 +606,3 @@ async fn create_worktree_when_repo_path_is_a_worktree() {
     .await
     .unwrap();
 }
-

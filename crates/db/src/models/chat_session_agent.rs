@@ -250,12 +250,9 @@ impl ChatSessionAgent {
     }
 
     pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<u64, sqlx::Error> {
-        let result = sqlx::query!(
-            r#"DELETE FROM chat_session_agents WHERE id = $1"#,
-            id
-        )
-        .execute(pool)
-        .await?;
+        let result = sqlx::query!(r#"DELETE FROM chat_session_agents WHERE id = $1"#, id)
+            .execute(pool)
+            .await?;
         Ok(result.rows_affected())
     }
 

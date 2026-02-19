@@ -1,4 +1,4 @@
-﻿use axum::{
+use axum::{
     Router,
     extract::{Query, State},
     response::Json as ResponseJson,
@@ -71,4 +71,3 @@ pub fn router(_deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/containers/info", get(get_container_info))
         .route("/containers/attempt-context", get(get_context))
 }
-

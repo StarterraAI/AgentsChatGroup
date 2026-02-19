@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    process::Stdio,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, process::Stdio, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -19,7 +14,9 @@ use workspace_utils::{msg_store::MsgStore, shell::resolve_executable_path_blocki
 use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
-    executors::{AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor},
+    executors::{
+        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+    },
     logs::{
         ActionType, NormalizedEntry, NormalizedEntryType, ToolResult, ToolStatus,
         stderr_processor::normalize_stderr_logs,
@@ -56,8 +53,11 @@ impl KimiCode {
     }
 
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let mut builder = CommandBuilder::new(Self::base_command())
-            .params(["--print", "--output-format", "stream-json"]);
+        let mut builder = CommandBuilder::new(Self::base_command()).params([
+            "--print",
+            "--output-format",
+            "stream-json",
+        ]);
 
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--model", model.as_str()]);
@@ -290,7 +290,10 @@ impl StandardCodingAgentExecutor for KimiCode {
                     }
                 };
 
-                let event_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+                let event_type = payload
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 let message = payload.get("message");
 
                 match (event_type, message) {
@@ -306,7 +309,8 @@ impl StandardCodingAgentExecutor for KimiCode {
                                 metadata: None,
                             };
                             let index = entry_index_provider.next();
-                            msg_store.push_patch(ConversationPatch::add_normalized_entry(index, entry));
+                            msg_store
+                                .push_patch(ConversationPatch::add_normalized_entry(index, entry));
                         }
 
                         for (tool_call_id, tool_name, arguments) in
@@ -333,7 +337,8 @@ impl StandardCodingAgentExecutor for KimiCode {
                             };
 
                             let index = entry_index_provider.next();
-                            msg_store.push_patch(ConversationPatch::add_normalized_entry(index, entry));
+                            msg_store
+                                .push_patch(ConversationPatch::add_normalized_entry(index, entry));
                             tool_entries.insert(
                                 tool_call_id,
                                 ToolEntryState {
@@ -364,7 +369,8 @@ impl StandardCodingAgentExecutor for KimiCode {
                         } else {
                             let index = entry_index_provider.next();
                             current_assistant_index = Some(index);
-                            msg_store.push_patch(ConversationPatch::add_normalized_entry(index, entry));
+                            msg_store
+                                .push_patch(ConversationPatch::add_normalized_entry(index, entry));
                         }
                     }
                     ("tool", Some(message)) => {

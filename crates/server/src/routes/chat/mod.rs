@@ -3,14 +3,12 @@ pub mod messages;
 pub mod runs;
 pub mod sessions;
 
-use axum::{
-    Router,
-    extract::DefaultBodyLimit,
-    middleware::from_fn_with_state,
-    routing::get,
-};
+use axum::{Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, routing::get};
 
-use crate::{DeploymentImpl, middleware::{load_chat_agent_middleware, load_chat_session_middleware}};
+use crate::{
+    DeploymentImpl,
+    middleware::{load_chat_agent_middleware, load_chat_session_middleware},
+};
 
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let session_router = Router::new()
@@ -59,7 +57,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         ));
 
     let sessions_router = Router::new()
-        .route("/", get(sessions::get_sessions).post(sessions::create_session))
+        .route(
+            "/",
+            get(sessions::get_sessions).post(sessions::create_session),
+        )
         .nest("/{session_id}", session_router);
 
     let agent_router = Router::new()
@@ -78,8 +79,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/", get(agents::get_agents).post(agents::create_agent))
         .nest("/{agent_id}", agent_router);
 
-    let messages_router = Router::new()
-        .route("/{message_id}", get(messages::get_message).delete(messages::delete_message));
+    let messages_router = Router::new().route(
+        "/{message_id}",
+        get(messages::get_message).delete(messages::delete_message),
+    );
 
     Router::new().nest(
         "/chat",

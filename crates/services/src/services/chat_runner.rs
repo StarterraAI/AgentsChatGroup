@@ -17,9 +17,7 @@ use db::{
         chat_message::{ChatMessage, ChatSenderType},
         chat_run::{ChatRun, CreateChatRun},
         chat_session::ChatSession,
-        chat_session_agent::{
-            ChatSessionAgent, ChatSessionAgentState,
-        },
+        chat_session_agent::{ChatSessionAgent, ChatSessionAgentState},
     },
 };
 use executors::{
@@ -36,12 +34,13 @@ use tokio::{
     fs,
     io::AsyncWriteExt,
     process::Command,
-    sync::{broadcast, Mutex},
+    sync::{Mutex, broadcast},
 };
 use tokio_util::io::ReaderStream;
 use ts_rs::TS;
 use utils::{assets::asset_dir, log_msg::LogMsg, msg_store::MsgStore};
 use uuid::Uuid;
+
 use crate::services::chat::{self, ChatServiceError};
 
 const UNTRACKED_FILE_LIMIT: u64 = 1024 * 1024;
@@ -97,7 +96,7 @@ struct SessionAgentSummary {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum MentionStatus {
-    Received,  // Message queued, waiting for agent to be available
+    Received, // Message queued, waiting for agent to be available
     Running,
     Completed,
     Failed,
@@ -107,7 +106,9 @@ pub enum MentionStatus {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ChatStreamEvent {
-    MessageNew { message: ChatMessage },
+    MessageNew {
+        message: ChatMessage,
+    },
     AgentDelta {
         session_id: Uuid,
         session_agent_id: Uuid,
@@ -196,12 +197,7 @@ impl ChatRunner {
     }
 
     /// Update the mention_statuses field in a message's meta
-    async fn update_mention_status(
-        &self,
-        message_id: Uuid,
-        agent_name: &str,
-        status: &str,
-    ) {
+    async fn update_mention_status(&self, message_id: Uuid, agent_name: &str, status: &str) {
         // Fetch the current message
         let Ok(Some(message)) = ChatMessage::find_by_id(&self.db.pool, message_id).await else {
             tracing::warn!(
@@ -255,8 +251,9 @@ impl ChatRunner {
             let runner = self.clone();
             let message_clone = message.clone();
             tokio::spawn(async move {
-                if let Err(err) =
-                    runner.run_agent_for_mention(session_id, &mention, &message_clone).await
+                if let Err(err) = runner
+                    .run_agent_for_mention(session_id, &mention, &message_clone)
+                    .await
                 {
                     tracing::warn!(
                         error = %err,
@@ -324,7 +321,12 @@ impl ChatRunner {
                     "failed to process queued message"
                 );
                 // Mark this message's mention as failed
-                self.update_mention_status(pending_msg.message.id, &pending_msg.agent_name, "failed").await;
+                self.update_mention_status(
+                    pending_msg.message.id,
+                    &pending_msg.agent_name,
+                    "failed",
+                )
+                .await;
                 self.emit(
                     pending_msg.session_id,
                     ChatStreamEvent::MentionAcknowledged {
@@ -360,7 +362,12 @@ impl ChatRunner {
                 );
 
                 // Update message meta to show failed status
-                self.update_mention_status(pending_msg.message.id, &pending_msg.agent_name, "failed").await;
+                self.update_mention_status(
+                    pending_msg.message.id,
+                    &pending_msg.agent_name,
+                    "failed",
+                )
+                .await;
 
                 // Emit failed event
                 self.emit(
@@ -447,8 +454,9 @@ impl ChatRunner {
         mention: &str,
         source_message: &ChatMessage,
     ) -> Result<(), ChatRunnerError> {
-        let Some((session_agent, agent)) =
-            self.resolve_session_agent_for_mention(session_id, mention).await?
+        let Some((session_agent, agent)) = self
+            .resolve_session_agent_for_mention(session_id, mention)
+            .await?
         else {
             if let Some(agent) = ChatAgent::find_by_name(&self.db.pool, mention).await? {
                 tracing::debug!(
@@ -509,7 +517,8 @@ impl ChatRunner {
             );
 
             // Persist received status to message meta
-            self.update_mention_status(source_message.id, &agent.name, "received").await;
+            self.update_mention_status(source_message.id, &agent.name, "received")
+                .await;
 
             return Ok(());
         }
@@ -548,7 +557,8 @@ impl ChatRunner {
         );
 
         // Persist running status to message meta
-        self.update_mention_status(source_message.id, &agent.name, "running").await;
+        self.update_mention_status(source_message.id, &agent.name, "running")
+            .await;
 
         let session_agent_id = session_agent.id;
         let agent_id = agent.id;
@@ -618,8 +628,8 @@ impl ChatRunner {
             .await?;
 
             let executor_profile_id = ExecutorProfileId::new(self.parse_runner_type(&agent)?);
-            let mut executor = ExecutorConfigs::get_cached()
-                .get_coding_agent_or_default(&executor_profile_id);
+            let mut executor =
+                ExecutorConfigs::get_cached().get_coding_agent_or_default(&executor_profile_id);
             executor.use_approvals(Arc::new(NoopExecutorApprovalService::default()));
 
             let repo_context = RepoContext::new(PathBuf::from(&workspace_path), Vec::new());
@@ -630,30 +640,32 @@ impl ChatRunner {
             env.insert("VK_CHAT_RUN_ID", run_id.to_string());
             env.insert(
                 "VK_CHAT_CONTEXT_PATH",
-                context_snapshot.workspace_path.to_string_lossy().to_string(),
+                context_snapshot
+                    .workspace_path
+                    .to_string_lossy()
+                    .to_string(),
             );
             env.insert(
                 "VK_CHAT_CONTEXT_RUN_PATH",
                 context_snapshot.run_path.to_string_lossy().to_string(),
             );
 
-            let mut spawned = if let Some(agent_session_id) =
-                session_agent.agent_session_id.as_deref()
-            {
-                executor
-                    .spawn_follow_up(
-                        PathBuf::from(&workspace_path).as_path(),
-                        &prompt,
-                        agent_session_id,
-                        session_agent.agent_message_id.as_deref(),
-                        &env,
-                    )
-                    .await?
-            } else {
-                executor
-                    .spawn(PathBuf::from(&workspace_path).as_path(), &prompt, &env)
-                    .await?
-            };
+            let mut spawned =
+                if let Some(agent_session_id) = session_agent.agent_session_id.as_deref() {
+                    executor
+                        .spawn_follow_up(
+                            PathBuf::from(&workspace_path).as_path(),
+                            &prompt,
+                            agent_session_id,
+                            session_agent.agent_message_id.as_deref(),
+                            &env,
+                        )
+                        .await?
+                } else {
+                    executor
+                        .spawn(PathBuf::from(&workspace_path).as_path(), &prompt, &env)
+                        .await?
+                };
 
             let msg_store = Arc::new(MsgStore::new());
             let raw_log_file = Arc::new(Mutex::new(fs::File::create(&raw_log_path).await?));
@@ -681,7 +693,13 @@ impl ChatRunner {
                 agent.name.clone(),
             );
 
-            self.spawn_exit_watcher(spawned.child, spawned.cancel, msg_store, failed_flag, session_agent_id);
+            self.spawn_exit_watcher(
+                spawned.child,
+                spawned.cancel,
+                msg_store,
+                failed_flag,
+                session_agent_id,
+            );
 
             Ok::<(), ChatRunnerError>(())
         }
@@ -732,10 +750,7 @@ impl ChatRunner {
 
     fn parse_runner_type(&self, agent: &ChatAgent) -> Result<BaseCodingAgent, ChatRunnerError> {
         let raw = agent.runner_type.trim();
-        let normalized = raw
-            .replace('-', "_")
-            .replace(' ', "_")
-            .to_ascii_uppercase();
+        let normalized = raw.replace('-', "_").replace(' ', "_").to_ascii_uppercase();
         BaseCodingAgent::from_str(&normalized)
             .map_err(|_| ChatRunnerError::UnknownRunnerType(raw.to_string()))
     }
@@ -771,10 +786,7 @@ impl ChatRunner {
         }
     }
 
-    async fn capture_git_diff(
-        workspace_path: &PathBuf,
-        run_dir: &PathBuf,
-    ) -> Option<DiffInfo> {
+    async fn capture_git_diff(workspace_path: &PathBuf, run_dir: &PathBuf) -> Option<DiffInfo> {
         let check = Command::new("git")
             .arg("-C")
             .arg(workspace_path)
@@ -838,10 +850,7 @@ impl ChatRunner {
         Some(DiffInfo { truncated })
     }
 
-    async fn capture_untracked_files(
-        workspace_path: &PathBuf,
-        run_dir: &PathBuf,
-    ) -> Vec<String> {
+    async fn capture_untracked_files(workspace_path: &PathBuf, run_dir: &PathBuf) -> Vec<String> {
         let output = Command::new("git")
             .arg("-C")
             .arg(workspace_path)
@@ -885,10 +894,8 @@ impl ChatRunner {
             match fs::metadata(&src).await {
                 Ok(metadata) => {
                     if metadata.len() > UNTRACKED_FILE_LIMIT {
-                        let placeholder = format!(
-                            "File too large to display ({} bytes).",
-                            metadata.len()
-                        );
+                        let placeholder =
+                            format!("File too large to display ({} bytes).", metadata.len());
                         let _ = fs::write(&dest, placeholder).await;
                     } else if let Ok(bytes) = fs::read(&src).await {
                         let content = String::from_utf8_lossy(&bytes).to_string();
@@ -951,9 +958,7 @@ impl ChatRunner {
         source_message: &ChatMessage,
         context_dir: &PathBuf,
     ) -> Result<Option<ReferenceContext>, ChatRunnerError> {
-        let Some(reference_id) =
-            chat::extract_reference_message_id(&source_message.meta.0)
-        else {
+        let Some(reference_id) = chat::extract_reference_message_id(&source_message.meta.0) else {
             return Ok(None);
         };
 
@@ -1177,7 +1182,10 @@ impl ChatRunner {
             );
             prompt.push_str(&format!("reference_id={}\n", reference.message_id));
             prompt.push_str(&format!("reference_sender={}\n", reference.sender_label));
-            prompt.push_str(&format!("reference_sender_type={:?}\n", reference.sender_type));
+            prompt.push_str(&format!(
+                "reference_sender_type={:?}\n",
+                reference.sender_type
+            ));
             prompt.push_str(&format!("reference_created_at={}\n", reference.created_at));
             if !reference.attachments.is_empty() {
                 prompt.push_str("reference_attachments:\n");
@@ -1201,10 +1209,7 @@ impl ChatRunner {
             if !message_attachments.attachments.is_empty() {
                 prompt.push_str("[MESSAGE_ATTACHMENTS]\n");
                 prompt.push_str("Attachments included with this message.\n");
-                prompt.push_str(&format!(
-                    "message_id={}\n",
-                    message_attachments.message_id
-                ));
+                prompt.push_str(&format!("message_id={}\n", message_attachments.message_id));
                 for attachment in &message_attachments.attachments {
                     prompt.push_str(&format!(
                         "- name={} kind={} size_bytes={} mime_type={} local_path={}\n",
@@ -1348,10 +1353,8 @@ impl ChatRunner {
 
                             if let Some(stream_type) = stream_type {
                                 let current = entry.content;
-                                let previous = last_content
-                                    .get(&index)
-                                    .cloned()
-                                    .unwrap_or_default();
+                                let previous =
+                                    last_content.get(&index).cloned().unwrap_or_default();
                                 let (delta, is_delta) = if current.starts_with(&previous) {
                                     (current[previous.len()..].to_string(), true)
                                 } else {
@@ -1410,8 +1413,10 @@ impl ChatRunner {
                         let _ = fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap())
                             .await;
 
-                        let final_content =
-                            ChatRunner::apply_reply_prefix(&latest_assistant, reply_handle.as_deref());
+                        let final_content = ChatRunner::apply_reply_prefix(
+                            &latest_assistant,
+                            reply_handle.as_deref(),
+                        );
 
                         if !final_content.trim().is_empty() {
                             if let Ok(message) = crate::services::chat::create_message(
@@ -1426,7 +1431,9 @@ impl ChatRunner {
                             {
                                 // Call handle_message to process @mentions in the agent's response
                                 // This enables AI-to-AI message routing (chain calls)
-                                if let Ok(Some(session)) = ChatSession::find_by_id(&db.pool, session_id).await {
+                                if let Ok(Some(session)) =
+                                    ChatSession::find_by_id(&db.pool, session_id).await
+                                {
                                     runner.handle_message(&session, &message).await;
                                 } else {
                                     // Fallback: emit MessageNew event if session lookup fails
@@ -1453,13 +1460,12 @@ impl ChatRunner {
                             ChatSessionAgentState::Idle
                         };
 
-                        let _ =
-                            ChatSessionAgent::update_state(
-                                &db.pool,
-                                session_agent_id,
-                                final_state.clone(),
-                            )
-                            .await;
+                        let _ = ChatSessionAgent::update_state(
+                            &db.pool,
+                            session_agent_id,
+                            final_state.clone(),
+                        )
+                        .await;
 
                         let _ = sender.send(ChatStreamEvent::AgentState {
                             session_agent_id,
@@ -1489,7 +1495,9 @@ impl ChatRunner {
                             MentionStatus::Running => "running",
                             MentionStatus::Received => "received",
                         };
-                        if let Ok(Some(msg)) = ChatMessage::find_by_id(&db.pool, source_message_id).await {
+                        if let Ok(Some(msg)) =
+                            ChatMessage::find_by_id(&db.pool, source_message_id).await
+                        {
                             let mut meta = msg.meta.0.clone();
                             let mention_statuses = meta
                                 .get_mut("mention_statuses")
@@ -1499,20 +1507,26 @@ impl ChatRunner {
                                 statuses.insert(agent_name.clone(), serde_json::json!(status_str));
                             } else {
                                 let mut new_statuses = serde_json::Map::new();
-                                new_statuses.insert(agent_name.clone(), serde_json::json!(status_str));
+                                new_statuses
+                                    .insert(agent_name.clone(), serde_json::json!(status_str));
                                 meta["mention_statuses"] = serde_json::Value::Object(new_statuses);
                             }
 
-                            let _ = ChatMessage::update_meta(&db.pool, source_message_id, meta).await;
+                            let _ =
+                                ChatMessage::update_meta(&db.pool, source_message_id, meta).await;
                         }
 
                         // Process any pending messages in the queue for this agent
                         // Only process if the agent completed successfully (not failed/dead)
                         if final_state == ChatSessionAgentState::Idle {
-                            runner.process_pending_queue(session_id, session_agent_id).await;
+                            runner
+                                .process_pending_queue(session_id, session_agent_id)
+                                .await;
                         } else {
                             // Agent failed/died - clear pending queue and mark all as failed
-                            runner.clear_pending_queue_on_failure(session_id, session_agent_id).await;
+                            runner
+                                .clear_pending_queue_on_failure(session_id, session_agent_id)
+                                .await;
                         }
 
                         break;
@@ -1533,7 +1547,8 @@ impl ChatRunner {
     ) {
         // Store the cancellation token for graceful shutdown
         if let Some(ref token) = cancel_token {
-            self.cancellation_tokens.insert(session_agent_id, token.clone());
+            self.cancellation_tokens
+                .insert(session_agent_id, token.clone());
         }
 
         let cancellation_tokens = self.cancellation_tokens.clone();
@@ -1566,18 +1581,31 @@ impl ChatRunner {
     }
 
     /// Stop a running agent by triggering graceful cancellation via CancellationToken
-    pub async fn stop_agent(&self, session_id: Uuid, session_agent_id: Uuid) -> Result<(), ChatRunnerError> {
-        tracing::info!("stop_agent called for session_agent_id: {}", session_agent_id);
+    pub async fn stop_agent(
+        &self,
+        session_id: Uuid,
+        session_agent_id: Uuid,
+    ) -> Result<(), ChatRunnerError> {
+        tracing::info!(
+            "stop_agent called for session_agent_id: {}",
+            session_agent_id
+        );
 
         // Try to cancel the agent via CancellationToken (graceful shutdown)
         let token_found = self.cancellation_tokens.contains_key(&session_agent_id);
         tracing::info!("CancellationToken found: {}", token_found);
 
         if let Some(token) = self.cancellation_tokens.get(&session_agent_id) {
-            tracing::info!("Cancelling agent for session_agent_id: {}", session_agent_id);
+            tracing::info!(
+                "Cancelling agent for session_agent_id: {}",
+                session_agent_id
+            );
             token.cancel();
         } else {
-            tracing::warn!("No CancellationToken found for session_agent_id: {}", session_agent_id);
+            tracing::warn!(
+                "No CancellationToken found for session_agent_id: {}",
+                session_agent_id
+            );
         }
 
         // Update state to Dead

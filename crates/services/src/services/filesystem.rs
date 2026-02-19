@@ -1,4 +1,4 @@
-﻿#[cfg(not(feature = "qa-mode"))]
+#[cfg(not(feature = "qa-mode"))]
 use std::collections::HashSet;
 use std::{
     fs,
@@ -363,4 +363,3 @@ impl FilesystemService {
         })
     }
 }
-

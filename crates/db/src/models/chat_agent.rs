@@ -68,10 +68,7 @@ impl ChatAgent {
         .await
     }
 
-    pub async fn find_by_name(
-        pool: &SqlitePool,
-        name: &str,
-    ) -> Result<Option<Self>, sqlx::Error> {
+    pub async fn find_by_name(pool: &SqlitePool, name: &str) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as!(
             ChatAgent,
             r#"SELECT id as "id!: Uuid",

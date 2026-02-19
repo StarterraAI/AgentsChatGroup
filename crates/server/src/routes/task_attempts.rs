@@ -2017,5 +2017,3 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
 
     Router::new().nest("/task-attempts", task_attempts_router)
 }
-
-

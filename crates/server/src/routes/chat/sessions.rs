@@ -6,17 +6,14 @@ use axum::{
     },
     response::{IntoResponse, Json as ResponseJson},
 };
-use db::models::chat_session::{
-    ChatSession, ChatSessionStatus, CreateChatSession, UpdateChatSession,
-};
-use db::models::chat_session_agent::{
-    ChatSessionAgent, CreateChatSessionAgent,
+use db::models::{
+    chat_session::{ChatSession, ChatSessionStatus, CreateChatSession, UpdateChatSession},
+    chat_session_agent::{ChatSessionAgent, CreateChatSessionAgent},
 };
 use deployment::Deployment;
 use serde::Deserialize;
 use ts_rs::TS;
-use utils::response::ApiResponse;
-use utils::assets::asset_dir;
+use utils::{assets::asset_dir, response::ApiResponse};
 use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError};
@@ -84,8 +81,7 @@ pub async fn get_session_agents(
     Extension(session): Extension<ChatSession>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<Vec<ChatSessionAgent>>>, ApiError> {
-    let agents =
-        ChatSessionAgent::find_all_for_session(&deployment.db().pool, session.id).await?;
+    let agents = ChatSessionAgent::find_all_for_session(&deployment.db().pool, session.id).await?;
     Ok(ResponseJson(ApiResponse::success(agents)))
 }
 
@@ -95,9 +91,7 @@ pub async fn create_session_agent(
     Json(payload): Json<CreateChatSessionAgentRequest>,
 ) -> Result<ResponseJson<ApiResponse<ChatSessionAgent>>, ApiError> {
     if session.status != ChatSessionStatus::Active {
-        return Err(ApiError::Conflict(
-            "Chat session is archived".to_string(),
-        ));
+        return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
     if let Some(existing) = ChatSessionAgent::find_by_session_and_agent(
@@ -139,15 +133,15 @@ pub async fn update_session_agent(
     Json(payload): Json<UpdateChatSessionAgentRequest>,
 ) -> Result<ResponseJson<ApiResponse<ChatSessionAgent>>, ApiError> {
     if session.status != ChatSessionStatus::Active {
-        return Err(ApiError::Conflict(
-            "Chat session is archived".to_string(),
-        ));
+        return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
     else {
-        return Err(ApiError::BadRequest("Chat session agent not found".to_string()));
+        return Err(ApiError::BadRequest(
+            "Chat session agent not found".to_string(),
+        ));
     };
 
     if existing.session_id != session.id {
@@ -173,7 +167,9 @@ pub async fn delete_session_agent(
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
     else {
-        return Err(ApiError::BadRequest("Chat session agent not found".to_string()));
+        return Err(ApiError::BadRequest(
+            "Chat session agent not found".to_string(),
+        ));
     };
 
     if existing.session_id != session.id {
@@ -184,7 +180,9 @@ pub async fn delete_session_agent(
 
     let rows = ChatSessionAgent::delete(&deployment.db().pool, existing.id).await?;
     if rows == 0 {
-        Err(ApiError::BadRequest("Chat session agent not found".to_string()))
+        Err(ApiError::BadRequest(
+            "Chat session agent not found".to_string(),
+        ))
     } else {
         Ok(ResponseJson(ApiResponse::success(())))
     }
@@ -263,9 +261,7 @@ pub async fn stream_session_ws(
 
 async fn handle_chat_stream_ws(
     socket: WebSocket,
-    mut rx: tokio::sync::broadcast::Receiver<
-        services::services::chat_runner::ChatStreamEvent,
-    >,
+    mut rx: tokio::sync::broadcast::Receiver<services::services::chat_runner::ChatStreamEvent>,
 ) -> anyhow::Result<()> {
     use futures_util::{SinkExt, StreamExt};
 
@@ -298,7 +294,9 @@ pub async fn stop_session_agent(
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
     else {
-        return Err(ApiError::BadRequest("Chat session agent not found".to_string()));
+        return Err(ApiError::BadRequest(
+            "Chat session agent not found".to_string(),
+        ));
     };
 
     if existing.session_id != session.id {

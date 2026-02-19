@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use axum::{
     extract::{Path, Query, State},
     http::header::CONTENT_TYPE,
@@ -6,7 +8,6 @@ use axum::{
 use db::models::chat_run::ChatRun;
 use deployment::Deployment;
 use serde::Deserialize;
-use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError};
@@ -79,9 +80,7 @@ pub async fn get_run_untracked_file(
         return Err(ApiError::BadRequest("Invalid untracked path".to_string()));
     }
 
-    let file_path = PathBuf::from(run.run_dir)
-        .join("untracked")
-        .join(rel_path);
+    let file_path = PathBuf::from(run.run_dir).join("untracked").join(rel_path);
     let content = match tokio::fs::read_to_string(&file_path).await {
         Ok(content) => content,
         Err(_) => {
