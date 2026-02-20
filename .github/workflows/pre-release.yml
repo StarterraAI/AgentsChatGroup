@@ -1357,7 +1357,7 @@ jobs:
           files: |
             agents-chatgroup-${{ needs.bump-version.outputs.new_tag }}.zip
             agents-chatgroup-npx/agents-chatgroup-*.tgz
-            release-assets/desktop/*.msi
-            release-assets/desktop/*.dmg
-            release-assets/desktop/*.AppImage
-            release-assets/desktop/*.deb
+            release-assets/desktop/**/*.msi
+            release-assets/desktop/**/*.dmg
+            release-assets/desktop/**/*.AppImage
+            release-assets/desktop/**/*.deb
