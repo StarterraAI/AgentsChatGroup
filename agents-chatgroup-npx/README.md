@@ -1,135 +1,88 @@
 # agents-chatgroup
 
-AI Coding Agents Chatgroup - A cross-platform installer and runner for the agents-chatgroup application.
+`agents-chatgroup` is a zero-build NPX launcher.
 
-## Quick Start
+It **does not compile source code** on the user's machine.
+Instead, it downloads prebuilt binaries from object storage (OSS preferred, R2 fallback), verifies checksum, extracts, installs, and runs.
 
-Run directly with npx (no pre-installation required):
+## Behavior
+
+When you run:
 
 ```bash
 npx agents-chatgroup
 ```
 
-This will automatically:
-1. Check system dependencies
-2. Clone the source code from GitHub
-3. Install dependencies
-4. Build the project
-5. Start the application
+the CLI does:
+
+1. Detect current platform/arch
+2. Download prebuilt `agents-chatgroup.zip` from configured object storage
+3. Verify SHA256 from manifest
+4. Extract to `~/.agents-chatgroup/bin`
+5. Add `~/.agents-chatgroup/bin` to PATH (current process + persistent profile)
+6. Launch binary immediately
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `npx agents-chatgroup` | Install (if needed) and start |
-| `npx agents-chatgroup install` | Install/update only |
-| `npx agents-chatgroup start` | Start the application |
-| `npx agents-chatgroup update` | Update to latest version |
-| `npx agents-chatgroup status` | Show installation status |
-| `npx agents-chatgroup uninstall` | Remove installation |
-| `npx agents-chatgroup --help` | Show help message |
+- `npx agents-chatgroup` - install (if needed) + run
+- `npx agents-chatgroup install` - install only
+- `npx agents-chatgroup start [args]` - run binary
+- `npx agents-chatgroup update` - force re-download + reinstall
+- `npx agents-chatgroup status` - show install status
+- `npx agents-chatgroup uninstall` - remove `~/.agents-chatgroup`
+- `npx agents-chatgroup --help`
 
-## Supported Platforms
+Pass-through args example:
 
-| Platform | Architecture | Status |
-|----------|--------------|--------|
-| macOS    | Intel (x64)  | ✅     |
-| macOS    | Apple Silicon (ARM64) | ✅ |
-| Linux    | x64          | ✅     |
-| Linux    | ARM64        | ✅     |
-| Windows  | x64          | ✅     |
-| Windows  | ARM64        | ✅     |
+```bash
+npx agents-chatgroup -- --port 54321
+npx agents-chatgroup start --port 54321
+```
+
+## Binary Source
+
+Release workflow injects these values into `bin/download.js` during `npm pack`:
+
+- `__OSS_PUBLIC_URL__` (when OSS is enabled)
+- `__R2_PUBLIC_URL__`
+- `__BINARY_TAG__`
+
+Runtime fetches:
+
+- `${BASE_URL}/binaries/${BINARY_TAG}/manifest.json`
+- `${BASE_URL}/binaries/${BINARY_TAG}/${platform}/agents-chatgroup.zip`
+
+Global latest version check uses:
+
+- `${BASE_URL}/binaries/manifest.json`
+
+Source selection order:
+
+1. `AGENTS_CHATGROUP_OSS_BASE_URL`
+2. Injected `__OSS_PUBLIC_URL__`
+3. `AGENTS_CHATGROUP_R2_BASE_URL`
+4. Injected `__R2_PUBLIC_URL__`
+
+## Installation Paths
+
+- Install root: `~/.agents-chatgroup`
+- Binary: `~/.agents-chatgroup/bin/agents-chatgroup` (or `.exe` on Windows)
+- Cache: `~/.agents-chatgroup/cache/<tag>/<platform>/`
+- Metadata: `~/.agents-chatgroup/install.json`
+
+## Local Dev Mode
+
+If `agents-chatgroup-npx/dist/` exists (or `AGENTS_CHATGROUP_LOCAL=1`), CLI reads binaries from local `dist` instead of remote object storage.
+
+You can also override runtime source manually:
+
+- `AGENTS_CHATGROUP_OSS_BASE_URL`
+- `AGENTS_CHATGROUP_R2_BASE_URL`
+- `AGENTS_CHATGROUP_BINARY_TAG`
 
 ## Requirements
 
-### Required
-- **Node.js** 18 or higher
-- **npm** (comes with Node.js)
-- **Git** for cloning the source code
+- Node.js >= 18
+- Network access to configured OSS/R2 public URL
 
-### Optional
-- **Rust** (if building Rust components)
-
-## How It Works
-
-1. **First Run**: The CLI clones the source code from GitHub to `~/.agents-chatgroup/source/`
-2. **Dependencies**: Automatically runs `npm install` for frontend and server
-3. **Build**: Builds the frontend and any Rust components (if Rust is installed)
-4. **Run**: Starts the application using the appropriate entry point
-
-## Installation Directory
-
-All files are stored in `~/.agents-chatgroup/`:
-
-```
-~/.agents-chatgroup/
-├── source/      # Cloned source code
-└── config/      # Configuration files
-```
-
-## User Experience
-
-```
-$ npx agents-chatgroup
-
-  ╔═══════════════════════════════════════════════╗
-  ║         🤖 Agents Chatgroup Installer         ║
-  ╚═══════════════════════════════════════════════╝
-
-  📍 Platform: macOS arm64
-  📦 Version:  v1.0.0
-  📂 Install:  /Users/you/.agents-chatgroup
-
-  First time setup - installing agents-chatgroup...
-
-  [1/4] Checking dependencies...
-
-     Dependency  Version              Status
-     ─────────────────────────────────────────
-     Node.js     v20.10.0             ✓
-     npm         v10.2.3              ✓
-     Git         2.42.0               ✓
-     Rust        1.75.0               ✓
-
-  [2/4] Getting source code...
-       Cloning repository...
-
-  [3/4] Installing dependencies...
-       Installing frontend dependencies...
-
-  [4/4] Building project...
-       Building frontend...
-
-  ✅ Installation complete!
-
-  🚀 Starting agents-chatgroup...
-```
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `AGENTS_CHATGROUP_DEBUG=1` | Enable debug output |
-
-## Troubleshooting
-
-### Git not found
-Install Git from https://git-scm.com/downloads
-
-### Node.js version too old
-Update Node.js to version 18 or higher from https://nodejs.org/
-
-### Build errors
-- Ensure you have the required build tools installed
-- On macOS: `xcode-select --install`
-- On Linux: `sudo apt install build-essential`
-- On Windows: Install Visual Studio Build Tools
-
-## License
-
-MIT
-
-## Links
-
-- [GitHub Repository](https://github.com/anthropics/agents-chatgroup)
-- [Report Issues](https://github.com/anthropics/agents-chatgroup/issues)
+No Rust/Git/build toolchain is required for end users.

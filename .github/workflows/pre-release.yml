@@ -582,38 +582,72 @@ jobs:
   upload-to-r2:
     needs: [bump-version, package-cli]
     runs-on: ubuntu-latest
+    outputs:
+      r2_enabled: ${{ steps.storage_guard.outputs.enabled }}
+      storage_enabled: ${{ steps.storage_guard.outputs.enabled }}
+      storage_provider: ${{ steps.storage_guard.outputs.provider }}
+      storage_public_url: ${{ steps.storage_guard.outputs.public_url }}
     steps:
-      - name: Check R2 secrets
-        id: r2_guard
+      - name: Select binary storage provider (OSS first, then R2)
+        id: storage_guard
         shell: bash
         env:
+          OSS_BINARIES_ACCESS_KEY_ID: ${{ secrets.OSS_BINARIES_ACCESS_KEY_ID }}
+          OSS_BINARIES_SECRET_ACCESS_KEY: ${{ secrets.OSS_BINARIES_SECRET_ACCESS_KEY }}
+          OSS_BINARIES_ENDPOINT: ${{ secrets.OSS_BINARIES_ENDPOINT }}
+          OSS_BINARIES_BUCKET: ${{ secrets.OSS_BINARIES_BUCKET }}
+          OSS_BINARIES_PUBLIC_URL: ${{ secrets.OSS_BINARIES_PUBLIC_URL }}
           R2_BINARIES_ACCESS_KEY_ID: ${{ secrets.R2_BINARIES_ACCESS_KEY_ID }}
           R2_BINARIES_SECRET_ACCESS_KEY: ${{ secrets.R2_BINARIES_SECRET_ACCESS_KEY }}
           R2_BINARIES_ENDPOINT: ${{ secrets.R2_BINARIES_ENDPOINT }}
           R2_BINARIES_BUCKET: ${{ secrets.R2_BINARIES_BUCKET }}
+          R2_BINARIES_PUBLIC_URL: ${{ secrets.R2_BINARIES_PUBLIC_URL }}
         run: |
           set -euo pipefail
-          missing=0
-          for key in R2_BINARIES_ACCESS_KEY_ID R2_BINARIES_SECRET_ACCESS_KEY R2_BINARIES_ENDPOINT R2_BINARIES_BUCKET; do
-            if [ -z "${!key}" ]; then
-              echo "::warning::Missing secret: $key"
-              missing=1
+
+          oss_ready=1
+          for key in OSS_BINARIES_ACCESS_KEY_ID OSS_BINARIES_SECRET_ACCESS_KEY OSS_BINARIES_ENDPOINT OSS_BINARIES_BUCKET OSS_BINARIES_PUBLIC_URL; do
+            if [ -z "${!key:-}" ]; then
+              oss_ready=0
             fi
           done
-          if [ "$missing" -eq 1 ]; then
-            echo "::notice::Skipping R2 upload because required secrets are missing."
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
+
+          r2_ready=1
+          for key in R2_BINARIES_ACCESS_KEY_ID R2_BINARIES_SECRET_ACCESS_KEY R2_BINARIES_ENDPOINT R2_BINARIES_BUCKET R2_BINARIES_PUBLIC_URL; do
+            if [ -z "${!key:-}" ]; then
+              r2_ready=0
+            fi
+          done
+
+          if [ "$oss_ready" -eq 1 ]; then
+            echo "::notice::Using OSS for binary upload."
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "provider=oss" >> "$GITHUB_OUTPUT"
+            echo "public_url=${OSS_BINARIES_PUBLIC_URL%/}" >> "$GITHUB_OUTPUT"
+          elif [ "$r2_ready" -eq 1 ]; then
+            echo "::notice::Using R2 for binary upload."
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "provider=r2" >> "$GITHUB_OUTPUT"
+            echo "public_url=${R2_BINARIES_PUBLIC_URL%/}" >> "$GITHUB_OUTPUT"
+          else
+            for key in OSS_BINARIES_ACCESS_KEY_ID OSS_BINARIES_SECRET_ACCESS_KEY OSS_BINARIES_ENDPOINT OSS_BINARIES_BUCKET OSS_BINARIES_PUBLIC_URL R2_BINARIES_ACCESS_KEY_ID R2_BINARIES_SECRET_ACCESS_KEY R2_BINARIES_ENDPOINT R2_BINARIES_BUCKET R2_BINARIES_PUBLIC_URL; do
+              if [ -z "${!key:-}" ]; then
+                echo "::warning::Missing secret: $key"
+              fi
+            done
+            echo "::notice::Skipping binary upload because neither OSS nor R2 is fully configured."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "provider=none" >> "$GITHUB_OUTPUT"
+            echo "public_url=" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v6
-        if: steps.r2_guard.outputs.enabled == 'true'
+        if: steps.storage_guard.outputs.enabled == 'true'
         with:
           ref: ${{ needs.bump-version.outputs.new_tag }}
 
       - name: Download all platform packages
-        if: steps.r2_guard.outputs.enabled == 'true'
+        if: steps.storage_guard.outputs.enabled == 'true'
         uses: actions/download-artifact@v7
         with:
           pattern: npx-platform-*
@@ -621,24 +655,54 @@ jobs:
           merge-multiple: true
 
       - name: List downloaded binaries
-        if: steps.r2_guard.outputs.enabled == 'true'
+        if: steps.storage_guard.outputs.enabled == 'true'
         run: |
           echo "Downloaded binaries:"
           find binaries/
 
-      - name: Configure AWS CLI for R2
-        if: steps.r2_guard.outputs.enabled == 'true'
+      - name: Configure AWS CLI for selected storage
+        if: steps.storage_guard.outputs.enabled == 'true'
+        shell: bash
+        env:
+          PROVIDER: ${{ steps.storage_guard.outputs.provider }}
+          OSS_BINARIES_ACCESS_KEY_ID: ${{ secrets.OSS_BINARIES_ACCESS_KEY_ID }}
+          OSS_BINARIES_SECRET_ACCESS_KEY: ${{ secrets.OSS_BINARIES_SECRET_ACCESS_KEY }}
+          OSS_BINARIES_REGION: ${{ secrets.OSS_BINARIES_REGION }}
+          R2_BINARIES_ACCESS_KEY_ID: ${{ secrets.R2_BINARIES_ACCESS_KEY_ID }}
+          R2_BINARIES_SECRET_ACCESS_KEY: ${{ secrets.R2_BINARIES_SECRET_ACCESS_KEY }}
         run: |
-          aws configure set aws_access_key_id ${{ secrets.R2_BINARIES_ACCESS_KEY_ID }}
-          aws configure set aws_secret_access_key ${{ secrets.R2_BINARIES_SECRET_ACCESS_KEY }}
-          aws configure set default.region auto
+          set -euo pipefail
 
-      - name: Generate manifest and upload to R2
-        if: steps.r2_guard.outputs.enabled == 'true'
+          if [ "$PROVIDER" = "oss" ]; then
+            aws configure set aws_access_key_id "$OSS_BINARIES_ACCESS_KEY_ID"
+            aws configure set aws_secret_access_key "$OSS_BINARIES_SECRET_ACCESS_KEY"
+            aws configure set default.region "${OSS_BINARIES_REGION:-cn-hangzhou}"
+          else
+            aws configure set aws_access_key_id "$R2_BINARIES_ACCESS_KEY_ID"
+            aws configure set aws_secret_access_key "$R2_BINARIES_SECRET_ACCESS_KEY"
+            aws configure set default.region auto
+          fi
+
+      - name: Generate manifest and upload binaries
+        if: steps.storage_guard.outputs.enabled == 'true'
+        shell: bash
+        env:
+          PROVIDER: ${{ steps.storage_guard.outputs.provider }}
+          OSS_BINARIES_ENDPOINT: ${{ secrets.OSS_BINARIES_ENDPOINT }}
+          OSS_BINARIES_BUCKET: ${{ secrets.OSS_BINARIES_BUCKET }}
+          R2_BINARIES_ENDPOINT: ${{ secrets.R2_BINARIES_ENDPOINT }}
+          R2_BINARIES_BUCKET: ${{ secrets.R2_BINARIES_BUCKET }}
         run: |
+          set -euo pipefail
+
           TAG="${{ needs.bump-version.outputs.new_tag }}"
-          ENDPOINT="${{ secrets.R2_BINARIES_ENDPOINT }}"
-          BUCKET="${{ secrets.R2_BINARIES_BUCKET }}"
+          if [ "$PROVIDER" = "oss" ]; then
+            ENDPOINT="$OSS_BINARIES_ENDPOINT"
+            BUCKET="$OSS_BINARIES_BUCKET"
+          else
+            ENDPOINT="$R2_BINARIES_ENDPOINT"
+            BUCKET="$R2_BINARIES_BUCKET"
+          fi
 
           # Generate version manifest with checksums
           node -e "
@@ -691,12 +755,26 @@ jobs:
             "s3://$BUCKET/binaries/manifest.json" \
             --endpoint-url "$ENDPOINT" --content-type "application/json"
 
-      - name: Verify upload
-        if: steps.r2_guard.outputs.enabled == 'true'
+      - name: Verify uploaded binaries
+        if: steps.storage_guard.outputs.enabled == 'true'
+        shell: bash
+        env:
+          PROVIDER: ${{ steps.storage_guard.outputs.provider }}
+          OSS_BINARIES_ENDPOINT: ${{ secrets.OSS_BINARIES_ENDPOINT }}
+          OSS_BINARIES_BUCKET: ${{ secrets.OSS_BINARIES_BUCKET }}
+          R2_BINARIES_ENDPOINT: ${{ secrets.R2_BINARIES_ENDPOINT }}
+          R2_BINARIES_BUCKET: ${{ secrets.R2_BINARIES_BUCKET }}
         run: |
+          set -euo pipefail
+
           TAG="${{ needs.bump-version.outputs.new_tag }}"
-          ENDPOINT="${{ secrets.R2_BINARIES_ENDPOINT }}"
-          BUCKET="${{ secrets.R2_BINARIES_BUCKET }}"
+          if [ "$PROVIDER" = "oss" ]; then
+            ENDPOINT="$OSS_BINARIES_ENDPOINT"
+            BUCKET="$OSS_BINARIES_BUCKET"
+          else
+            ENDPOINT="$R2_BINARIES_ENDPOINT"
+            BUCKET="$R2_BINARIES_BUCKET"
+          fi
 
           echo "Listing uploaded files..."
           aws s3 ls "s3://$BUCKET/binaries/$TAG/" \
@@ -863,7 +941,7 @@ jobs:
           rm -f certificate.p12 app_store_key.json
 
   create-prerelease:
-    needs: [bump-version, build-frontend, build-desktop-installers]
+    needs: [bump-version, build-frontend, build-desktop-installers, upload-to-r2]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -899,19 +977,96 @@ jobs:
       - name: Setup Node for npm pack
         uses: ./.github/actions/setup-node
 
-      - name: Prepare NPX package and pack (R2 optional)
+      - name: Validate npm publish prerequisites
+        if: ${{ github.event.inputs.publish_to_npm == 'true' }}
+        shell: bash
+        env:
+          STORAGE_UPLOAD_ENABLED: ${{ needs.upload-to-r2.outputs.storage_enabled }}
+          STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
+          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
         run: |
+          set -euo pipefail
+          if [ "${STORAGE_UPLOAD_ENABLED}" != "true" ]; then
+            echo "::error::publish_to_npm=true requires binary upload job to run successfully."
+            echo "::error::Both OSS and R2 appear unavailable or skipped."
+            exit 1
+          fi
+
+          if [ "${STORAGE_PROVIDER}" = "none" ] || [ -z "${STORAGE_PROVIDER:-}" ]; then
+            echo "::error::publish_to_npm=true requires an active storage provider (oss or r2)."
+            exit 1
+          fi
+
+          if [ -z "${STORAGE_PUBLIC_URL:-}" ]; then
+            echo "::error::publish_to_npm=true requires a public download URL (OSS_BINARIES_PUBLIC_URL or R2_BINARIES_PUBLIC_URL)."
+            exit 1
+          fi
+
+      - name: Verify binaries are publicly downloadable
+        if: ${{ github.event.inputs.publish_to_npm == 'true' }}
+        shell: bash
+        env:
+          STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
+          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+          TAG: ${{ needs.bump-version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+
+          BASE="${STORAGE_PUBLIC_URL%/}"
+          MANIFEST_URL="$BASE/binaries/$TAG/manifest.json"
+          echo "Checking manifest ($STORAGE_PROVIDER): $MANIFEST_URL"
+          curl -fsSL "$MANIFEST_URL" -o manifest.json
+
+          # Ensure required platform/binary entries exist and each file is reachable.
+          node -e '
+            const fs = require("fs");
+            const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+            const requiredPlatforms = ["linux-x64", "linux-arm64", "windows-x64", "macos-x64", "macos-arm64"];
+            const requiredBinaries = ["agents-chatgroup", "agents-chatgroup-mcp", "agents-chatgroup-review"];
+
+            for (const platform of requiredPlatforms) {
+              if (!manifest.platforms?.[platform]) {
+                console.error(`Missing platform in manifest: ${platform}`);
+                process.exit(1);
+              }
+              for (const binary of requiredBinaries) {
+                if (!manifest.platforms[platform][binary]) {
+                  console.error(`Missing binary in manifest: ${platform}/${binary}`);
+                  process.exit(1);
+                }
+              }
+            }
+          '
+
+          for platform in linux-x64 linux-arm64 windows-x64 macos-x64 macos-arm64; do
+            for binary in agents-chatgroup agents-chatgroup-mcp agents-chatgroup-review; do
+              url="$BASE/binaries/$TAG/$platform/$binary.zip"
+              echo "Checking $url"
+              curl -fsI "$url" >/dev/null
+            done
+          done
+
+      - name: Prepare NPX package and pack
+        shell: bash
+        env:
+          STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
+          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+        run: |
+          set -euo pipefail
           cd agents-chatgroup-npx
           if [ -f bin/download.js ]; then
-            if [ -n "${{ secrets.R2_BINARIES_PUBLIC_URL }}" ]; then
+            if [ -n "${STORAGE_PUBLIC_URL:-}" ] && [ "${STORAGE_PROVIDER}" = "oss" ]; then
+              echo "Injecting OSS URL into bin/download.js"
+              sed -i "s|__OSS_PUBLIC_URL__|${STORAGE_PUBLIC_URL}|g" bin/download.js
+            elif [ -n "${STORAGE_PUBLIC_URL:-}" ] && [ "${STORAGE_PROVIDER}" = "r2" ]; then
               echo "Injecting R2 URL into bin/download.js"
-              sed -i "s|__R2_PUBLIC_URL__|${{ secrets.R2_BINARIES_PUBLIC_URL }}|g" bin/download.js
+              sed -i "s|__R2_PUBLIC_URL__|${STORAGE_PUBLIC_URL}|g" bin/download.js
             else
-              echo "R2_BINARIES_PUBLIC_URL is empty; skipping R2 URL injection"
+              echo "Storage public URL is empty or provider unavailable; skipping URL injection"
             fi
             sed -i "s|__BINARY_TAG__|${{ needs.bump-version.outputs.new_tag }}|g" bin/download.js
           else
-            echo "bin/download.js not found; skipping R2/tag injection"
+            echo "bin/download.js not found; skipping URL/tag injection"
           fi
           npm pack
 
