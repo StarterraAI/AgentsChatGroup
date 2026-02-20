@@ -86,7 +86,7 @@
     "expand": "展开",
     "systemPromptPlaceholder": "描述此 AI 成员应如何表现。",
     "workspacePath": "工作区路径",
-    "workspacePathPlaceholder": "服务器上的绝对路径",
+    "workspacePathPlaceholder": "AI成员工作的绝对路径",
     "workspacePathCannotBeModified": "工作区路径无法修改",
     "add": "添加",
     "save": "保存"

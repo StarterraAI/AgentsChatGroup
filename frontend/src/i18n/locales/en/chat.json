@@ -86,7 +86,7 @@
     "expand": "Expand",
     "systemPromptPlaceholder": "Describe how this AI member should behave.",
     "workspacePath": "Workspace path",
-    "workspacePathPlaceholder": "Absolute path on the server",
+    "workspacePathPlaceholder": "AI member working absolute path",
     "workspacePathCannotBeModified": "Workspace path cannot be modified",
     "add": "Add",
     "save": "Save"

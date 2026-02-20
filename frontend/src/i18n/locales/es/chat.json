@@ -86,7 +86,7 @@
     "expand": "Expandir",
     "systemPromptPlaceholder": "Describe cómo debe comportarse este miembro IA.",
     "workspacePath": "Ruta del espacio de trabajo",
-    "workspacePathPlaceholder": "Ruta absoluta en el servidor",
+    "workspacePathPlaceholder": "Ruta absoluta para el trabajo de los miembros de IA",
     "workspacePathCannotBeModified": "La ruta del espacio de trabajo no se puede modificar",
     "add": "Añadir",
     "save": "Guardar"

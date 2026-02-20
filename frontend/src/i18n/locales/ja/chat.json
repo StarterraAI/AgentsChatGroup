@@ -86,7 +86,7 @@
     "expand": "展開",
     "systemPromptPlaceholder": "このAIメンバーの振る舞いを説明してください。",
     "workspacePath": "ワークスペースパス",
-    "workspacePathPlaceholder": "サーバー上の絶対パス",
+    "workspacePathPlaceholder": "AIメンバーの作業用絶対パス",
     "workspacePathCannotBeModified": "ワークスペースパスは変更できません",
     "add": "追加",
     "save": "保存"

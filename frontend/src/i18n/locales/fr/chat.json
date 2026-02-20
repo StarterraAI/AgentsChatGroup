@@ -86,7 +86,7 @@
     "expand": "Développer",
     "systemPromptPlaceholder": "Décrivez comment ce membre IA doit se comporter.",
     "workspacePath": "Chemin de l'espace de travail",
-    "workspacePathPlaceholder": "Chemin absolu sur le serveur",
+    "workspacePathPlaceholder": "Chemin d'accès absolu pour le travail des membres IA",
     "workspacePathCannotBeModified": "Le chemin de l'espace de travail ne peut pas être modifié",
     "add": "Ajouter",
     "save": "Enregistrer"

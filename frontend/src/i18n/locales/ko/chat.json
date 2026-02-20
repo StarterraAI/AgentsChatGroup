@@ -86,7 +86,7 @@
     "expand": "확장",
     "systemPromptPlaceholder": "이 AI 멤버가 어떻게 행동해야 하는지 설명하세요.",
     "workspacePath": "워크스페이스 경로",
-    "workspacePathPlaceholder": "서버의 절대 경로",
+    "workspacePathPlaceholder": "AI 구성원 작업 절대 경로",
     "workspacePathCannotBeModified": "워크스페이스 경로는 수정할 수 없습니다",
     "add": "추가",
     "save": "저장"
