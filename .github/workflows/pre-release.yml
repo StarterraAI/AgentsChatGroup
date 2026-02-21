@@ -1387,12 +1387,12 @@ jobs:
               .addCodeBlock(body, 'markdown')
               .write();
 
-      - name: Create GitHub Pre-Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.bump-version.outputs.new_tag }}
-          name: Pre-release ${{ needs.bump-version.outputs.new_tag }}
-          prerelease: true
+          name: ${{ github.event.inputs.version_type == 'prerelease' && format('Pre-release {0}', needs.bump-version.outputs.new_tag) || format('Release {0}', needs.bump-version.outputs.new_tag) }}
+          prerelease: ${{ github.event.inputs.version_type == 'prerelease' }}
           generate_release_notes: false
           body: ${{ steps.changelog.outputs.body }}
           files: |
