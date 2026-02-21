@@ -1,7 +1,7 @@
 {
   "name": "agents-chatgroup",
   "private": true,
-  "version": "0.1.1-main.14",
+  "version": "0.1.1-main.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
