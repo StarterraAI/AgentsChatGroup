@@ -1136,13 +1136,41 @@ jobs:
       - name: Setup Node for npm pack
         uses: ./.github/actions/setup-node
 
+      - name: Resolve storage public URL
+        shell: bash
+        env:
+          STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
+          STORAGE_PUBLIC_URL_FROM_OUTPUT: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+          OSS_BINARIES_PUBLIC_URL: ${{ secrets.OSS_BINARIES_PUBLIC_URL }}
+          R2_BINARIES_PUBLIC_URL: ${{ secrets.R2_BINARIES_PUBLIC_URL }}
+        run: |
+          set -euo pipefail
+
+          resolved_url="${STORAGE_PUBLIC_URL_FROM_OUTPUT:-}"
+          if [ -z "${resolved_url}" ]; then
+            if [ "${STORAGE_PROVIDER}" = "oss" ]; then
+              resolved_url="${OSS_BINARIES_PUBLIC_URL:-}"
+            elif [ "${STORAGE_PROVIDER}" = "r2" ]; then
+              resolved_url="${R2_BINARIES_PUBLIC_URL:-}"
+            fi
+          fi
+
+          resolved_url="${resolved_url%/}"
+          echo "STORAGE_PUBLIC_URL_RESOLVED=${resolved_url}" >> "$GITHUB_ENV"
+
+          if [ -n "${resolved_url}" ]; then
+            echo "::notice::Resolved storage public URL for provider '${STORAGE_PROVIDER}'."
+          else
+            echo "::warning::Storage public URL is empty for provider '${STORAGE_PROVIDER}'."
+          fi
+
       - name: Validate npm publish prerequisites
         if: ${{ github.event.inputs.publish_to_npm == 'true' }}
         shell: bash
         env:
           STORAGE_UPLOAD_ENABLED: ${{ needs.upload-to-r2.outputs.storage_enabled }}
           STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
-          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+          STORAGE_PUBLIC_URL: ${{ env.STORAGE_PUBLIC_URL_RESOLVED }}
         run: |
           set -euo pipefail
           if [ "${STORAGE_UPLOAD_ENABLED}" != "true" ]; then
@@ -1166,7 +1194,7 @@ jobs:
         shell: bash
         env:
           STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
-          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+          STORAGE_PUBLIC_URL: ${{ env.STORAGE_PUBLIC_URL_RESOLVED }}
           TAG: ${{ needs.bump-version.outputs.new_tag }}
         run: |
           set -euo pipefail
@@ -1209,7 +1237,7 @@ jobs:
         shell: bash
         env:
           STORAGE_PROVIDER: ${{ needs.upload-to-r2.outputs.storage_provider }}
-          STORAGE_PUBLIC_URL: ${{ needs.upload-to-r2.outputs.storage_public_url }}
+          STORAGE_PUBLIC_URL: ${{ env.STORAGE_PUBLIC_URL_RESOLVED }}
         run: |
           set -euo pipefail
           cd agents-chatgroup-npx
