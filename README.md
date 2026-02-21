@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/agents-chatgroup"><img alt="npm" src="https://img.shields.io/npm/v/agents-chatgroup?style=flat-square" /></a>
-  <a href="https://github.com/StarterraAI/AgentsChatGroup.git/blob/main/.github/workflows/publish.yml"><img alt="Build status" src="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml/badge.svg)](https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml" /></a>
+  <a href="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml"><img alt="Build status" src="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml/badge.svg" /></a>
   <a href="#"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
 </p>
 

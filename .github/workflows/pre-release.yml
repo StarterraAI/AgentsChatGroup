@@ -1,4 +1,4 @@
-﻿name: Create GitHub Pre-Release
+﻿name: Building
 
 on:
   workflow_dispatch:
