@@ -16,6 +16,11 @@
           "model": "opus"
         }
       },
+      "SONNET": {
+        "CLAUDE_CODE": {
+          "model": "sonnet"
+        }
+      },
       "OPUS_4_6": {
         "CLAUDE_CODE": {
           "model": "claude-opus-4-6"
@@ -47,11 +52,29 @@
       },
       "FLASH": {
         "GEMINI": {
-          "model": "gemini-3-flash-preview",
+          "model": "gemini-2.5-flash",
+          "yolo": true
+        }
+      },
+      "FLASH_LITE": {
+        "GEMINI": {
+          "model": "gemini-2.5-flash-lite",
           "yolo": true
         }
       },
       "PRO": {
+        "GEMINI": {
+          "model": "gemini-2.5-pro",
+          "yolo": true
+        }
+      },
+      "FLASH_PREVIEW": {
+        "GEMINI": {
+          "model": "gemini-3-flash-preview",
+          "yolo": true
+        }
+      },
+      "PRO_PREVIEW": {
         "GEMINI": {
           "model": "gemini-3-pro-preview",
           "yolo": true
@@ -66,13 +89,13 @@
     "CODEX": {
       "DEFAULT": {
         "CODEX": {
-          "model": "gpt-5.2-codex",
+          "model": "gpt-5.3-codex",
           "sandbox": "danger-full-access"
         }
       },
       "HIGH": {
         "CODEX": {
-          "model": "gpt-5.2-codex",
+          "model": "gpt-5.3-codex",
           "sandbox": "danger-full-access",
           "model_reasoning_effort": "high"
         }
@@ -92,7 +115,7 @@
       },
       "APPROVALS": {
         "CODEX": {
-          "model": "gpt-5.2",
+          "model": "gpt-5.3-codex",
           "sandbox": "workspace-write",
           "ask_for_approval": "unless-trusted"
         }

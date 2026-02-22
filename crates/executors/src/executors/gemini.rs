@@ -23,6 +23,9 @@ pub struct Gemini {
     #[serde(default)]
     pub append_prompt: AppendPrompt,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        description = "Model to use (e.g., gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3-pro-preview)"
+    )]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub yolo: Option<bool>,
@@ -36,7 +39,7 @@ pub struct Gemini {
 
 impl Gemini {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let mut builder = CommandBuilder::new("npx -y @google/gemini-cli@0.23.0");
+        let mut builder = CommandBuilder::new("npx -y @google/gemini-cli@0.29.5");
 
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--model", model.as_str()]);
