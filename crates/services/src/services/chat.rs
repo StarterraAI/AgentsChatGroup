@@ -256,7 +256,7 @@ pub fn parse_mentions(content: &str) -> Vec<String> {
 
         if i > 0 {
             let prev = chars[i - 1];
-            if prev.is_ascii_alphanumeric() || prev == '_' || prev == '-' || prev == '.' {
+            if prev.is_alphanumeric() || prev == '_' || prev == '-' || prev == '.' {
                 continue;
             }
         }
@@ -265,7 +265,7 @@ pub fn parse_mentions(content: &str) -> Vec<String> {
         let mut j = i + 1;
         while j < chars.len() {
             let c = chars[j];
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
                 name.push(c);
                 j += 1;
             } else {
@@ -968,5 +968,20 @@ mod tests {
     fn de_dupes_mentions_in_order() {
         let mentions = parse_mentions("@a @a @b");
         assert_eq!(mentions, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn parses_mentions_with_unicode_names() {
+        let mentions = parse_mentions(
+            "@\u{5C0F}\u{660E} please check @\u{30C6}\u{30B9}\u{30C8}-agent and @\u{0645}\u{0637}\u{0648}\u{0631}_1",
+        );
+        assert_eq!(
+            mentions,
+            vec![
+                "\u{5C0F}\u{660E}",
+                "\u{30C6}\u{30B9}\u{30C8}-agent",
+                "\u{0645}\u{0637}\u{0648}\u{0631}_1",
+            ]
+        );
     }
 }
