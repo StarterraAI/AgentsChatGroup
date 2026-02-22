@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "agents-chatgroup",
-    "version": "0.1.0"
+    "version": "0.2.2"
   },
   "tauri": {
     "allowlist": {
@@ -15,7 +15,12 @@
     },
     "bundle": {
       "active": true,
-      "targets": ["msi", "dmg", "appimage", "deb"],
+      "targets": [
+        "msi",
+        "dmg",
+        "appimage",
+        "deb"
+      ],
       "identifier": "com.agents-chatgroup.desktop",
       "icon": [
         "icons/icon-square.png",
