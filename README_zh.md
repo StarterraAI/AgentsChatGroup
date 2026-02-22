@@ -100,7 +100,7 @@ npx agents-chatgroup
 
 📚 [完整安装指南 →](https://docs.agentschatgroup.com/getting-started)
 
-## 使用场景
+## 使用场景示例
 
 **🧑‍💻 全栈开发团队**
 > 架构师设计 Schema → 开发 Agent 实现功能 → 审查 Agent 检查安全性 → 测试 Agent 编写覆盖。全流程在一个群聊里并行推进。
@@ -108,11 +108,13 @@ npx agents-chatgroup
 **📝 内容生产团队**
 > 研究 Agent 收集资料 → 写作 Agent 起草内容 → 编辑 Agent 润色。无需在多个聊天窗口之间复制粘贴。
 
-**🔍 代码库审计**
+**🔍 代码库审计团队**
 > 多个 Agent 同时扫描不同模块，在更短时间内产出完整报告。
 
-**📊 数据管道协作**
+**📊 数据管道协作团队**
 > 清洗 Agent 预处理数据 → 分析 Agent 执行查询 → 可视化 Agent 生成图表。每个 Agent 都能无缝承接上一步结果。
+
+更多AI团队等你来建设。
 
 ## 有何不同
 
@@ -128,10 +130,10 @@ npx agents-chatgroup
 
 | 类别 | 详情 |
 |----------|---------|
-| **Agent 支持** | Claude Code · Gemini CLI · Codex · Amp · QWen Coder · 热门 Agent |
+| **Agent 支持** | Claude Code · Gemini CLI · Codex · Amp · QWen Coder · 其他热门 Agent |
 | **协作能力** | 群聊 · 上下文共享 · @Mention 交接 · 任务追踪 · 会话归档 |
 | **配置管理** | 统一 MCP 配置 · 灵活环境变量 |
-| **平台支持** | 桌面应用（Windows / macOS / Linux） · SSH 远程部署 |
+| **平台支持** | 桌面应用（Windows / macOS / Linux） · Web页面应用 |
 | **即将推出** | 更紧凑的上下文优化 · 更多 Agent 集成 |
 
 ## 技术栈

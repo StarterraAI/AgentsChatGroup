@@ -16,6 +16,16 @@
           "model": "opus"
         }
       },
+      "OPUS_4_6": {
+        "CLAUDE_CODE": {
+          "model": "claude-opus-4-6"
+        }
+      },
+      "SONNET_4_6": {
+        "CLAUDE_CODE": {
+          "model": "claude-sonnet-4-6"
+        }
+      },
       "APPROVALS": {
         "CLAUDE_CODE": {
           "approvals": true
@@ -63,6 +73,19 @@
       "HIGH": {
         "CODEX": {
           "model": "gpt-5.2-codex",
+          "sandbox": "danger-full-access",
+          "model_reasoning_effort": "high"
+        }
+      },
+      "GPT_5_3_CODEX": {
+        "CODEX": {
+          "model": "gpt-5.3-codex",
+          "sandbox": "danger-full-access"
+        }
+      },
+      "GPT_5_3_CODEX_HIGH": {
+        "CODEX": {
+          "model": "gpt-5.3-codex",
           "sandbox": "danger-full-access",
           "model_reasoning_effort": "high"
         }
@@ -142,10 +165,22 @@
               "model": "gpt-5.2"
         }
       },
+      "GPT_5_3_CODEX": {
+        "CURSOR_AGENT": {
+              "force": true,
+              "model": "gpt-5.3-codex"
+        }
+      },
       "OPUS_4_5_THINKING": {
         "CURSOR_AGENT": {
               "force": true,
               "model": "opus-4.5-thinking"
+        }
+      },
+      "OPUS_4_6": {
+        "CURSOR_AGENT": {
+              "force": true,
+              "model": "opus-4.6"
         }
       },
       "GPT_5_2_HIGH": {
@@ -178,6 +213,12 @@
               "model": "sonnet-4.5-thinking"
         }
       },
+      "SONNET_4_6": {
+        "CURSOR_AGENT": {
+              "force": true,
+              "model": "sonnet-4.6"
+        }
+      },
       "GEMINI_3_FLASH": {
         "CURSOR_AGENT": {
               "force": true,
@@ -203,10 +244,28 @@
           "model": "gpt-5.2"
         }
       },
+      "GPT_5_3_CODEX": {
+        "COPILOT": {
+          "allow_all_tools": true,
+          "model": "gpt-5.3-codex"
+        }
+      },
       "GEMINI_3_PRO_PREVIEW": {
         "COPILOT": {
           "allow_all_tools": true,
           "model": "gemini-3-pro-preview"
+        }
+      },
+      "CLAUDE_OPUS_4_6": {
+        "COPILOT": {
+          "allow_all_tools": true,
+          "model": "claude-opus-4.6"
+        }
+      },
+      "CLAUDE_SONNET_4_6": {
+        "COPILOT": {
+          "allow_all_tools": true,
+          "model": "claude-sonnet-4.6"
         }
       },
       "CLAUDE_OPUS_4_5": {
@@ -294,10 +353,28 @@
           "model": "gpt-5.1"
         }
       },
+      "GPT_5_3_CODEX": {
+        "DROID": {
+          "autonomy": "skip-permissions-unsafe",
+          "model": "gpt-5.3-codex"
+        }
+      },
       "GEMINI_3_PRO": {
         "DROID": {
           "autonomy": "skip-permissions-unsafe",
           "model": "gemini-3-pro-preview"
+        }
+      },
+      "CLAUDE_SONNET_4_6": {
+        "DROID": {
+          "autonomy": "skip-permissions-unsafe",
+          "model": "claude-sonnet-4-6-20260202"
+        }
+      },
+      "CLAUDE_OPUS_4_6": {
+        "DROID": {
+          "autonomy": "skip-permissions-unsafe",
+          "model": "claude-opus-4-6-20260114"
         }
       },
       "CLAUDE_SONNET_4_5": {

@@ -1,0 +1,29 @@
+{
+  "name": "@openai/codex",
+  "version": "0.104.0",
+  "license": "Apache-2.0",
+  "bin": {
+    "codex": "bin/codex.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openai/codex.git",
+    "directory": "codex-cli"
+  },
+  "packageManager": "pnpm@10.28.2+sha512.41872f037ad22f7348e3b1debbaf7e867cfd448f2726d9cf74c08f19507c31d2c8e7a11525b983febc2df640b5438dee6023ebb1f84ed43cc2d654d2bc326264",
+  "optionalDependencies": {
+    "@openai/codex-linux-x64": "npm:@openai/codex@0.104.0-linux-x64",
+    "@openai/codex-linux-arm64": "npm:@openai/codex@0.104.0-linux-arm64",
+    "@openai/codex-darwin-x64": "npm:@openai/codex@0.104.0-darwin-x64",
+    "@openai/codex-darwin-arm64": "npm:@openai/codex@0.104.0-darwin-arm64",
+    "@openai/codex-win32-x64": "npm:@openai/codex@0.104.0-win32-x64",
+    "@openai/codex-win32-arm64": "npm:@openai/codex@0.104.0-win32-arm64"
+  }
+}

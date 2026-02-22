@@ -114,6 +114,8 @@ npx agents-chatgroup
 **📊 Data Pipeline**
 > Cleaner preps data → Analyst runs queries → Visualizer builds charts. Each agent picks up where the last left off.
 
+Assemble more AI teams. The future is yours to build.
+
 ## How It's Different
 
 | | Traditional Single Agent | Multi-window Workflow | Claude Code-Agent Team | AgentsChatGroup |
@@ -128,10 +130,10 @@ npx agents-chatgroup
 
 | Category | Details |
 |----------|---------|
-| **Agent Support** | Claude Code · Gemini CLI · Codex · Amp · QWen Coder · Popular  agents |
+| **Agent Support** | Claude Code · Gemini CLI · Codex · Amp · QWen Coder · Other popular  agents |
 | **Collaboration** | Group chat · Shared context · @Mention handoff · Task tracking · Session archive |
 | **Config** | Unified MCP config · Flexible environment variables |
-| **Platform** | Desktop app (Windows / macOS / Linux) · SSH remote deployment |
+| **Platform** | Desktop app (Windows / macOS / Linux) · Web app (npx) |
 | **Coming Soon** | Compact context optimization · More agent integrations |
 
 ## Tech Stack
