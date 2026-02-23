@@ -1,6 +1,6 @@
 {
   "name": "agents-chatgroup",
-  "version": "0.2.3-1.0",
+  "version": "0.2.3-35",
   "private": true,
   "bin": {
     "agents-chatgroup": "npx-cli/bin/cli.js"
