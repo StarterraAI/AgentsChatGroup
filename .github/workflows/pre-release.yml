@@ -140,6 +140,12 @@ jobs:
             new_tag="v${new_version}-${timestamp}"
           fi
 
+          # For desktop MSI builds, use a stable x.y.z app version in prerelease runs.
+          desktop_version="$new_version"
+          if [[ "${{ github.event.inputs.version_type }}" == "prerelease" ]]; then
+            desktop_version="${new_version%%-*}"
+          fi
+
           # Update agents-chatgroup-npx package.json to match
           cd agents-chatgroup-npx
           npm version $new_version --no-git-tag-version --allow-same-version
@@ -150,20 +156,21 @@ jobs:
           npm version $new_version --no-git-tag-version --allow-same-version
           cd ..
 
-          # Keep desktop app versions aligned with the npm package version
-          cargo set-version --manifest-path src-tauri/Cargo.toml "$new_version"
-          NEW_VERSION="$new_version" node -e '
+          # Keep desktop app version MSI-compatible on prerelease builds.
+          cargo set-version --manifest-path src-tauri/Cargo.toml "$desktop_version"
+          DESKTOP_VERSION="$desktop_version" node -e '
             const fs = require("fs");
             const path = "src-tauri/tauri.conf.json";
             const conf = JSON.parse(fs.readFileSync(path, "utf8"));
             conf.package = conf.package || {};
-            conf.package.version = process.env.NEW_VERSION;
+            conf.package.version = process.env.DESKTOP_VERSION;
             fs.writeFileSync(path, JSON.stringify(conf, null, 2) + "\n");
           '
 
           cargo set-version --workspace "$new_version"
 
           echo "New version: $new_version"
+          echo "Desktop app version: $desktop_version"
           echo "new_version=$new_version" >> $GITHUB_OUTPUT
           echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
 

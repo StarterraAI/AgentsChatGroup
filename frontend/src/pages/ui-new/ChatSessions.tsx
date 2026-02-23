@@ -1278,6 +1278,19 @@ export function ChatSessions() {
       return;
     }
 
+    const projectName = activeSessionTitle.trim();
+    const isNameChange =
+      !editingMember ||
+      editingMember.agent.name.trim().toLowerCase() !== name.toLowerCase();
+    if (
+      projectName.length > 0 &&
+      isNameChange &&
+      projectName.toLowerCase() === name.toLowerCase()
+    ) {
+      setMemberError('AI member name cannot match the project name.');
+      return;
+    }
+
     if (!runnerType) {
       setMemberError('Choose a base coding agent.');
       return;

@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Json as ResponseJson},
 };
 use db::models::{
+    chat_agent::ChatAgent,
     chat_session::{ChatSession, ChatSessionStatus, CreateChatSession, UpdateChatSession},
     chat_session_agent::{ChatSessionAgent, CreateChatSessionAgent},
 };
@@ -111,6 +112,18 @@ pub async fn create_session_agent(
             return Ok(ResponseJson(ApiResponse::success(updated)));
         }
         return Ok(ResponseJson(ApiResponse::success(existing)));
+    }
+
+    let Some(agent) = ChatAgent::find_by_id(&deployment.db().pool, payload.agent_id).await? else {
+        return Err(ApiError::BadRequest("Chat agent not found".to_string()));
+    };
+
+    let project_name = session.title.as_deref().map(str::trim).unwrap_or("");
+    let agent_name = agent.name.trim();
+    if !project_name.is_empty() && project_name.to_lowercase() == agent_name.to_lowercase() {
+        return Err(ApiError::BadRequest(
+            "AI member name cannot match the project name.".to_string(),
+        ));
     }
 
     let created = ChatSessionAgent::create(
