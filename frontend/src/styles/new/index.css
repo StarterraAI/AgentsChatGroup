@@ -802,6 +802,21 @@
     color: rgba(255, 255, 255, 0.95);
   }
 
+  .new-design .chat-session-left-version {
+    padding: 8px 12px;
+    color: rgba(230, 238, 255, 0.66);
+    font-size: 11px;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    user-select: none;
+  }
+
+  .new-design .chat-session-left-version.collapsed {
+    padding: 6px 4px 8px;
+    text-align: center;
+    font-size: 10px;
+  }
+
   .new-design .chat-session-header {
     background: var(--chat-session-bg-primary);
     border-bottom: 1px solid var(--chat-session-border-default);

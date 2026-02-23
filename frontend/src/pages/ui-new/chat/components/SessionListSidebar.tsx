@@ -38,6 +38,10 @@ export function SessionListSidebar({
 }: SessionListSidebarProps) {
   const { t } = useTranslation('chat');
   const isCompactSessionRow = !isCollapsed && width < 320;
+  const appVersion = __APP_VERSION__.trim();
+  const appVersionLabel = appVersion.startsWith('v')
+    ? appVersion
+    : `v${appVersion}`;
   const collapseActionLabel = isCollapsed
     ? t('sidebar.expandSidebar')
     : t('sidebar.collapseSidebar');
@@ -143,6 +147,12 @@ export function SessionListSidebar({
               )
             )}
           </div>
+          <div
+            className="chat-session-left-version collapsed"
+            title={appVersionLabel}
+          >
+            {appVersionLabel}
+          </div>
         </>
       ) : (
         <>
@@ -239,6 +249,9 @@ export function SessionListSidebar({
                   )}
               </div>
             </div>
+          </div>
+          <div className="chat-session-left-version" title={appVersionLabel}>
+            {appVersionLabel}
           </div>
         </>
       )}
