@@ -60,7 +60,7 @@
       "rateLimited": "レート制限中",
       "checkQuota": "APIクォータを確認するか、後でもう一度お試しください"
     },
-    "contextCompressed": "この応答ではコンテキストが圧縮されました",
+    "contextCompressed": "コンテキストは圧縮されました",
     "sendToAgent": "エージェントに送信",
     "open": "開く"
   },

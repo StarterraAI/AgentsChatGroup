@@ -60,7 +60,7 @@
       "rateLimited": "請求頻率受限",
       "checkQuota": "請檢查您的 API 配額或稍後重試"
     },
-    "contextCompressed": "此回覆已進行上下文壓縮",
+    "contextCompressed": "已進行上下文壓縮",
     "sendToAgent": "傳送給 Agent",
     "open": "開啟"
   },

@@ -60,7 +60,7 @@
       "rateLimited": "요청 속도 제한됨",
       "checkQuota": "API 할당량을 확인하거나 나중에 다시 시도하세요"
     },
-    "contextCompressed": "이번 응답을 위해 컨텍스트가 압축되었습니다",
+    "contextCompressed": "컨텍스트가 압축되었습니다",
     "sendToAgent": "에이전트에게 보내기",
     "open": "열기"
   },

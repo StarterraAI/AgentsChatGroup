@@ -18,7 +18,7 @@ use executors::{
     env::{ExecutionEnv, RepoContext},
     executors::{BaseCodingAgent, StandardCodingAgentExecutor},
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
-    profile::{ExecutorConfigs, ExecutorProfileId},
+    profile::{ExecutorConfigs, ExecutorProfileId, canonical_variant_key},
 };
 use futures::StreamExt;
 use moka::sync::Cache;
@@ -43,8 +43,7 @@ const COMPRESSION_TARGET_RATIO: f64 = 0.4;
 const LLM_COMPRESSION_THRESHOLD: usize = 20;
 /// Number of oldest messages to compress via LLM
 const LLM_COMPRESSION_BATCH_SIZE: usize = 5;
-/// Size of context window to take from recent messages
-const CONTEXT_WINDOW_SIZE: usize = 20;
+const EXECUTOR_PROFILE_VARIANT_KEY: &str = "executor_profile_variant";
 
 /// Cache for LLM-generated summaries to avoid repeated API calls
 /// Key: hash of message IDs being compressed
@@ -115,16 +114,8 @@ pub fn extract_reference_message_id(meta: &Value) -> Option<Uuid> {
     id.and_then(|value| Uuid::parse_str(value).ok())
 }
 
-/// Truncate string by character count and append "..." when truncated.
-fn truncate_with_ellipsis(content: &str, max_chars: usize) -> String {
-    match content.char_indices().nth(max_chars) {
-        Some((idx, _)) => format!("{}...", &content[..idx]),
-        None => content.to_string(),
-    }
-}
-
 /// Compress message content to reduce token usage
-/// Keeps the first part of content and truncates with "..." if too long
+/// Keeps the first part of content and adds a compacted marker if too long
 fn compress_content(content: &str, max_chars: usize) -> String {
     let content = content.trim();
     if content.chars().count() <= max_chars {
@@ -154,7 +145,35 @@ fn compress_content(content: &str, max_chars: usize) -> String {
     }
 
     let truncated: String = chars[..break_point.min(chars.len())].iter().collect();
-    format!("{}...[truncated]", truncated.trim())
+    format!("{}（上下文已压缩）", truncated.trim())
+}
+
+fn truncate_summary_text(content: &str, max_chars: usize) -> String {
+    let trimmed = content.trim();
+    match trimmed.char_indices().nth(max_chars) {
+        Some((idx, _)) => format!("{}（摘要已截断）", &trimmed[..idx].trim()),
+        None => trimmed.to_string(),
+    }
+}
+
+fn summarize_message_content(content: &str, max_chars: usize) -> String {
+    let normalized = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.is_empty() {
+        return "无有效内容".to_string();
+    }
+
+    let first_sentence = normalized
+        .split_terminator(['。', '！', '？', '.', '!', '?', '\n'])
+        .map(str::trim)
+        .find(|part| !part.is_empty())
+        .unwrap_or(normalized.as_str());
+
+    truncate_summary_text(first_sentence, max_chars)
 }
 
 /// Build structured messages with compression for older messages
@@ -517,22 +536,24 @@ fn create_summary_message(
 
 /// Simple fallback compression by concatenating messages
 fn create_fallback_summary(messages_to_summarize: &[Value]) -> String {
-    let mut summary = String::from("[Context Summary] ");
-    for msg in messages_to_summarize
-        .iter()
-        .take(LLM_COMPRESSION_BATCH_SIZE)
-    {
-        // sender is now a string (label) directly, not an object
+    let mut parts = Vec::new();
+
+    for msg in messages_to_summarize {
         let sender_label = msg
             .get("sender")
             .and_then(|s| s.as_str())
             .unwrap_or("unknown");
         let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-        // Keep only first 100 chars per message
-        let truncated = truncate_with_ellipsis(content, 100);
-        summary.push_str(&format!("{}:{} | ", sender_label, truncated));
+        let summarized = summarize_message_content(content, 120);
+        parts.push(format!("{sender_label}: {summarized}"));
     }
-    truncate_with_ellipsis(&summary, 500)
+
+    if parts.is_empty() {
+        return "[Context Summary] No significant prior context.".to_string();
+    }
+
+    let summary = format!("[Context Summary] {}", parts.join(" | "));
+    truncate_summary_text(&summary, 500)
 }
 
 /// Generate summary using an LLM agent in the background
@@ -575,6 +596,29 @@ async fn generate_llm_summary_background(
     });
 }
 
+fn resolve_agent_executor_profile_id(
+    agent: &ChatAgent,
+    base_agent: BaseCodingAgent,
+) -> ExecutorProfileId {
+    let variant = extract_executor_profile_variant(&agent.tools_enabled.0);
+    match variant {
+        Some(variant) => ExecutorProfileId::with_variant(base_agent, variant),
+        None => ExecutorProfileId::new(base_agent),
+    }
+}
+
+fn extract_executor_profile_variant(tools_enabled: &Value) -> Option<String> {
+    let variant = tools_enabled
+        .as_object()
+        .and_then(|value| value.get(EXECUTOR_PROFILE_VARIANT_KEY))
+        .and_then(Value::as_str)?
+        .trim();
+    if variant.is_empty() || variant.eq_ignore_ascii_case("DEFAULT") {
+        return None;
+    }
+    Some(canonical_variant_key(variant))
+}
+
 /// Inner function to actually call the LLM for summarization
 async fn generate_llm_summary_inner(
     pool: &SqlitePool,
@@ -606,7 +650,7 @@ async fn generate_llm_summary_inner(
     let prompt = build_summary_prompt(messages_content);
 
     // Get executor configuration
-    let executor_profile_id = ExecutorProfileId::new(base_agent);
+    let executor_profile_id = resolve_agent_executor_profile_id(&agent, base_agent);
     let mut executor =
         ExecutorConfigs::get_cached().get_coding_agent_or_default(&executor_profile_id);
     executor.use_approvals(Arc::new(NoopExecutorApprovalService));
@@ -681,7 +725,7 @@ async fn generate_llm_summary_inner(
             let content = entry.content.trim();
             if !content.is_empty() {
                 // Truncate if too long
-                let summary = truncate_with_ellipsis(content, 500);
+                let summary = truncate_summary_text(content, 500);
                 return Ok(summary);
             }
         }
@@ -698,12 +742,34 @@ fn get_cached_summary(message_ids: &[Uuid]) -> Option<String> {
     SUMMARY_CACHE.get(&cache_key)
 }
 
+/// Calculate how many compaction rounds should be applied based on the number
+/// of messages actually sent to the agent in prior runs (effective context size),
+/// not on UI display count.
+///
+/// Behavior:
+/// - <= 20 raw messages: no compaction
+/// - 21..25 raw messages: 1 round
+/// - 26..30 raw messages: 2 rounds
+/// - etc.
+fn compaction_rounds(total_count: usize) -> usize {
+    if total_count <= LLM_COMPRESSION_THRESHOLD {
+        return 0;
+    }
+    ((total_count - (LLM_COMPRESSION_THRESHOLD + 1)) / LLM_COMPRESSION_BATCH_SIZE) + 1
+}
+
 /// Build compacted context with LLM-based compression for older messages.
 ///
 /// Algorithm:
-/// - If total messages > 20, take the most recent 20 as context window
-/// - Compress the oldest 5 messages of this window into 1 summary message via LLM
-/// - Final context = 1 summary + 15 recent messages = 16 messages
+/// - <= 20 raw messages: no compaction
+/// - > 20 raw messages: summarize older messages in 5-message batches
+/// - Context size oscillates between 16 and 20:
+///   - 21 -> 16
+///   - 22 -> 17
+///   - 23 -> 18
+///   - 24 -> 19
+///   - 25 -> 20
+///   - 26 -> 16 (next compaction round), and so on
 ///
 /// # Arguments
 /// * `pool` - Database connection pool
@@ -729,8 +795,10 @@ pub async fn build_compacted_context(
 
     let total_count = all_messages.len();
 
-    // If total messages <= threshold, return all messages without compression
-    if total_count <= LLM_COMPRESSION_THRESHOLD {
+    let rounds = compaction_rounds(total_count);
+
+    // No compaction needed yet
+    if rounds == 0 {
         let structured = build_structured_messages_internal(&all_messages, &agent_map, false);
         let jsonl = structured
             .iter()
@@ -744,17 +812,30 @@ pub async fn build_compacted_context(
         });
     }
 
-    // Take the most recent CONTEXT_WINDOW_SIZE messages as context window
-    let context_window: Vec<_> = all_messages
-        .into_iter()
-        .skip(total_count.saturating_sub(CONTEXT_WINDOW_SIZE))
-        .collect();
+    // Once compaction starts, we always keep 1 oldest message dropped (from the initial 21->20 transition)
+    // and summarize cumulative 5-message batches after that.
+    // This keeps trigger behavior aligned with the effective context size sent to the model.
+    let permanently_dropped = 1usize.min(total_count);
+    let messages_to_summarize_count = rounds * LLM_COMPRESSION_BATCH_SIZE;
+    let summary_start = permanently_dropped;
+    let summary_end = (summary_start + messages_to_summarize_count).min(total_count);
 
-    // Split into messages to compress (oldest 5) and messages to keep (remaining 15)
-    // But first, filter out any messages that are already summaries (sender_type=System with compression meta)
-    // This shouldn't happen if summaries aren't persisted to DB, but we check for robustness
-    let split_point = LLM_COMPRESSION_BATCH_SIZE.min(context_window.len());
-    let (to_compress_raw, messages_to_keep) = context_window.split_at(split_point);
+    if summary_end <= summary_start {
+        let structured = build_structured_messages_internal(&all_messages, &agent_map, false);
+        let jsonl = structured
+            .iter()
+            .filter_map(|msg| serde_json::to_string(msg).ok())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        return Ok(CompactedContext {
+            messages: structured,
+            jsonl,
+        });
+    }
+
+    let to_compress_raw = &all_messages[summary_start..summary_end];
+    let messages_to_keep = &all_messages[summary_end..];
 
     // Filter: skip messages that are already compressed summaries
     let messages_to_compress: Vec<&ChatMessage> = to_compress_raw
@@ -774,7 +855,7 @@ pub async fn build_compacted_context(
 
     // If no messages to compress (all were already summaries), return without new compression
     if messages_to_compress.is_empty() {
-        let structured = build_structured_messages_internal(&context_window, &agent_map, false);
+        let structured = build_structured_messages_internal(messages_to_keep, &agent_map, false);
         let jsonl = structured
             .iter()
             .filter_map(|msg| serde_json::to_string(msg).ok())
@@ -946,7 +1027,7 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        LLM_COMPRESSION_BATCH_SIZE, create_fallback_summary, parse_mentions, truncate_with_ellipsis,
+        compaction_rounds, create_fallback_summary, parse_mentions, truncate_summary_text,
     };
 
     #[test]
@@ -983,17 +1064,17 @@ mod tests {
     }
 
     #[test]
-    fn truncate_with_ellipsis_handles_utf8_boundaries() {
+    fn truncate_summary_text_handles_utf8_boundaries() {
         let input = "\u{771F}".repeat(600);
-        let truncated = truncate_with_ellipsis(&input, 500);
-        assert!(truncated.ends_with("..."));
-        assert_eq!(truncated.chars().count(), 503);
+        let truncated = truncate_summary_text(&input, 500);
+        assert!(truncated.ends_with("（摘要已截断）"));
+        assert!(truncated.chars().count() > 500);
         assert!(truncated.starts_with(&"\u{771F}".repeat(500)));
     }
 
     #[test]
     fn fallback_summary_truncates_unicode_safely() {
-        let messages = (0..LLM_COMPRESSION_BATCH_SIZE)
+        let messages = (0..5)
             .map(|_| {
                 json!({
                     "sender": "tester",
@@ -1003,7 +1084,19 @@ mod tests {
             .collect::<Vec<_>>();
 
         let summary = create_fallback_summary(&messages);
-        assert!(summary.ends_with("..."));
-        assert!(summary.chars().count() <= 503);
+        assert!(summary.starts_with("[Context Summary]"));
+        assert!(!summary.contains("..."));
+        assert!(summary.chars().count() <= 510);
+    }
+
+    #[test]
+    fn compaction_rounds_follow_effective_context_schedule() {
+        assert_eq!(compaction_rounds(20), 0);
+        assert_eq!(compaction_rounds(21), 1);
+        assert_eq!(compaction_rounds(22), 1);
+        assert_eq!(compaction_rounds(25), 1);
+        assert_eq!(compaction_rounds(26), 2);
+        assert_eq!(compaction_rounds(30), 2);
+        assert_eq!(compaction_rounds(31), 3);
     }
 }

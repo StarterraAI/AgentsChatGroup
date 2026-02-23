@@ -60,7 +60,7 @@
       "rateLimited": "Limite de requêtes atteinte",
       "checkQuota": "Veuillez vérifier votre quota API ou réessayer plus tard"
     },
-    "contextCompressed": "Le contexte a été compressé pour cette réponse",
+    "contextCompressed": "Le contexte a été compressé",
     "sendToAgent": "Envoyer à l'agent",
     "open": "Ouvrir"
   },

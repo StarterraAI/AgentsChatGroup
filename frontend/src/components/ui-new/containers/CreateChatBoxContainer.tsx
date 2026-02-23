@@ -5,7 +5,12 @@ import { useCreateMode } from '@/contexts/CreateModeContext';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useCreateWorkspace } from '@/hooks/useCreateWorkspace';
 import { useCreateAttachments } from '@/hooks/useCreateAttachments';
-import { getVariantOptions, areProfilesEqual } from '@/utils/executor';
+import {
+  areProfilesEqual,
+  getVariantDisplayLabel,
+  getVariantOptions,
+  isOpencodeExecutor,
+} from '@/utils/executor';
 import { splitMessageToTitleDescription } from '@/utils/string';
 import type { ExecutorProfileId, BaseCodingAgent } from 'shared/types';
 import { CreateChatBox } from '../primitives/CreateChatBox';
@@ -86,6 +91,12 @@ export function CreateChatBoxContainer() {
   // Get variant options for the current executor
   const variantOptions = useMemo(
     () => getVariantOptions(effectiveProfile?.executor, profiles),
+    [effectiveProfile?.executor, profiles]
+  );
+
+  const getVariantLabel = useCallback(
+    (variant: string) =>
+      getVariantDisplayLabel(effectiveProfile?.executor, variant, profiles),
     [effectiveProfile?.executor, profiles]
   );
 
@@ -274,6 +285,9 @@ export function CreateChatBoxContainer() {
                   selected: effectiveProfile.variant ?? 'DEFAULT',
                   options: variantOptions,
                   onChange: handleVariantChange,
+                  getLabel: isOpencodeExecutor(effectiveProfile.executor)
+                    ? getVariantLabel
+                    : undefined,
                   onCustomise: handleCustomise,
                 }
               : undefined

@@ -19,6 +19,7 @@ import {
 } from 'shared/types';
 import { cn } from '@/lib/utils';
 import { getWorkspacePathExample } from '@/utils/platform';
+import { extractExecutorProfileVariant } from '@/utils/executor';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
 import { Tooltip } from '@/components/ui-new/primitives/Tooltip';
 import { toPrettyCase } from '@/utils/string';
@@ -113,6 +114,11 @@ export interface AiMembersSidebarProps {
   availabilityLabel: (runner: string) => string;
   memberVariantOptions: string[];
   getModelName: (runnerType: string, variant?: string) => string | null;
+  getModelDisplayName: (
+    runnerType: string,
+    modelName: string | null
+  ) => string | null;
+  getVariantLabel: (runnerType: string, variant: string) => string;
   // Actions
   onOpenAddMember: () => void;
   onCancelMember: () => void;
@@ -165,6 +171,8 @@ export function AiMembersSidebar({
   availabilityLabel,
   memberVariantOptions,
   getModelName,
+  getModelDisplayName,
+  getVariantLabel,
   onOpenAddMember,
   onCancelMember,
   onSaveMember,
@@ -295,8 +303,14 @@ export function AiMembersSidebar({
           )}
         {sessionMembers.map(({ agent, sessionAgent }) => {
           const state = agentStates[agent.id] ?? ChatSessionAgentState.idle;
-          const modelName = getModelName(agent.runner_type);
-          const fullText = `${toPrettyCase(agent.runner_type)} | ${agentStateLabels[state]}${modelName ? ` | ${modelName}` : ''}`;
+          const memberVariant =
+            extractExecutorProfileVariant(agent.tools_enabled) ?? undefined;
+          const modelName = getModelName(agent.runner_type, memberVariant);
+          const modelDisplayName = getModelDisplayName(
+            agent.runner_type,
+            modelName
+          );
+          const fullText = `${toPrettyCase(agent.runner_type)} | ${agentStateLabels[state]}${modelDisplayName ? ` | ${modelDisplayName}` : ''}`;
           const modelStatusPreview = truncateByChars(fullText, 15);
           const avatarSeed = getAgentAvatarSeed(
             agent.id,
@@ -486,19 +500,23 @@ export function AiMembersSidebar({
                     )}
                   >
                     {memberVariantOptions.map((variant) => {
-                      const name = getModelName(newMemberRunnerType, variant);
                       return (
                         <option key={variant} value={variant}>
-                          {variant}
-                          {name ? ` (${name})` : ''}
+                          {getVariantLabel(newMemberRunnerType, variant)}
                         </option>
                       );
                     })}
                   </select>
-                  {getModelName(newMemberRunnerType, newMemberVariant) && (
+                  {getModelDisplayName(
+                    newMemberRunnerType,
+                    getModelName(newMemberRunnerType, newMemberVariant)
+                  ) && (
                     <div className="text-xs text-low">
                       {t('members.model')}:{' '}
-                      {getModelName(newMemberRunnerType, newMemberVariant)}
+                      {getModelDisplayName(
+                        newMemberRunnerType,
+                        getModelName(newMemberRunnerType, newMemberVariant)
+                      )}
                     </div>
                   )}
                 </div>

@@ -60,7 +60,7 @@
       "rateLimited": "Rate limited",
       "checkQuota": "Please check your API quota or try again later"
     },
-    "contextCompressed": "Context was compressed for this response",
+    "contextCompressed": "Context has been compressed",
     "sendToAgent": "Send to agent",
     "open": "Open"
   },

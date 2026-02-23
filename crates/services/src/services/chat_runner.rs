@@ -28,7 +28,7 @@ use executors::{
         StandardCodingAgentExecutor,
     },
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
-    profile::{ExecutorConfigs, ExecutorProfileId},
+    profile::{ExecutorConfigs, ExecutorProfileId, canonical_variant_key},
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,7 @@ const AGENTS_CHATGROUP_DIR: &str = ".agents_chatgroup";
 const RUNS_DIR_NAME: &str = ".runs";
 const CONTEXT_DIR_NAME: &str = ".context";
 const RESERVED_USER_HANDLE: &str = "you";
+const EXECUTOR_PROFILE_VARIANT_KEY: &str = "executor_profile_variant";
 
 struct DiffInfo {
     truncated: bool,
@@ -771,7 +772,7 @@ impl ChatRunner {
             )
             .await?;
 
-            let executor_profile_id = ExecutorProfileId::new(self.parse_runner_type(&agent)?);
+            let executor_profile_id = self.parse_executor_profile_id(&agent)?;
             let mut executor =
                 ExecutorConfigs::get_cached().get_coding_agent_or_default(&executor_profile_id);
             executor.use_approvals(Arc::new(NoopExecutorApprovalService));
@@ -794,7 +795,7 @@ impl ChatRunner {
                 context_snapshot.run_path.to_string_lossy().to_string(),
             );
 
-            let mut spawned =
+            let mut spawned = if session_agent.state != ChatSessionAgentState::Dead {
                 if let Some(agent_session_id) = session_agent.agent_session_id.as_deref() {
                     executor
                         .spawn_follow_up(
@@ -809,7 +810,12 @@ impl ChatRunner {
                     executor
                         .spawn(PathBuf::from(&workspace_path).as_path(), &prompt, &env)
                         .await?
-                };
+                }
+            } else {
+                executor
+                    .spawn(PathBuf::from(&workspace_path).as_path(), &prompt, &env)
+                    .await?
+            };
 
             let msg_store = Arc::new(MsgStore::new());
             let raw_log_file = Arc::new(Mutex::new(fs::File::create(&raw_log_path).await?));
@@ -909,6 +915,30 @@ impl ChatRunner {
         let normalized = raw.replace(['-', ' '], "_").to_ascii_uppercase();
         BaseCodingAgent::from_str(&normalized)
             .map_err(|_| ChatRunnerError::UnknownRunnerType(raw.to_string()))
+    }
+
+    fn parse_executor_profile_id(
+        &self,
+        agent: &ChatAgent,
+    ) -> Result<ExecutorProfileId, ChatRunnerError> {
+        let executor = self.parse_runner_type(agent)?;
+        let variant = Self::extract_executor_profile_variant(&agent.tools_enabled.0);
+        Ok(match variant {
+            Some(variant) => ExecutorProfileId::with_variant(executor, variant),
+            None => ExecutorProfileId::new(executor),
+        })
+    }
+
+    fn extract_executor_profile_variant(tools_enabled: &serde_json::Value) -> Option<String> {
+        let variant = tools_enabled
+            .as_object()
+            .and_then(|value| value.get(EXECUTOR_PROFILE_VARIANT_KEY))
+            .and_then(serde_json::Value::as_str)?
+            .trim();
+        if variant.is_empty() || variant.eq_ignore_ascii_case("DEFAULT") {
+            return None;
+        }
+        Some(canonical_variant_key(variant))
     }
 
     fn resolve_reply_handle(&self, message: &ChatMessage) -> String {
@@ -1555,6 +1585,24 @@ impl ChatRunner {
                             ChatRunner::capture_git_diff(&workspace_path, &run_dir).await;
                         let untracked_files =
                             ChatRunner::capture_untracked_files(&workspace_path, &run_dir).await;
+                        let failed = failed_flag.load(Ordering::Relaxed);
+
+                        if failed {
+                            agent_session_id = None;
+                            agent_message_id = None;
+                            let _ = ChatSessionAgent::update_agent_session_id(
+                                &db.pool,
+                                session_agent_id,
+                                None,
+                            )
+                            .await;
+                            let _ = ChatSessionAgent::update_agent_message_id(
+                                &db.pool,
+                                session_agent_id,
+                                None,
+                            )
+                            .await;
+                        }
 
                         let mut meta = serde_json::json!({
                             "run_id": run_id,
@@ -1623,7 +1671,6 @@ impl ChatRunner {
                             is_final: true,
                         });
 
-                        let failed = failed_flag.load(Ordering::Relaxed);
                         let final_state = if failed {
                             ChatSessionAgentState::Dead
                         } else {

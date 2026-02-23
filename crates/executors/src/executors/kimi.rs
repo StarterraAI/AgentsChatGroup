@@ -80,13 +80,33 @@ impl KimiCode {
             Value::Array(parts) => parts
                 .iter()
                 .filter_map(|part| {
+                    if let Some(text) = part.as_str() {
+                        return Some(text.to_string());
+                    }
+
                     part.get("text")
                         .and_then(|v| v.as_str())
                         .map(|v| v.to_string())
+                        .or_else(|| {
+                            part.get("content")
+                                .and_then(|v| v.as_str())
+                                .map(|v| v.to_string())
+                        })
                 })
                 .collect::<String>(),
             _ => String::new(),
         }
+    }
+
+    fn extract_event_type_and_message<'a>(payload: &'a Value) -> (&'a str, &'a Value) {
+        let event_type = payload
+            .get("type")
+            .and_then(|v| v.as_str())
+            .or_else(|| payload.get("role").and_then(|v| v.as_str()))
+            .unwrap_or_default();
+
+        let message = payload.get("message").unwrap_or(payload);
+        (event_type, message)
     }
 
     fn extract_tool_calls(message: &Value) -> Vec<(String, String, Option<Value>)> {
@@ -202,6 +222,12 @@ async fn spawn_kimi(
         .with_profile(cmd_overrides)
         .apply_to_command(&mut command);
 
+    // Kimi CLI is Python-based and may decode stdin using the local Windows
+    // code page. Force UTF-8 to avoid surrogate decoding errors for CJK input.
+    command
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
+
     let mut child = command.group_spawn()?;
 
     if let Some(mut stdin) = child.inner().stdin.take() {
@@ -290,14 +316,10 @@ impl StandardCodingAgentExecutor for KimiCode {
                     }
                 };
 
-                let event_type = payload
-                    .get("type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let message = payload.get("message");
+                let (event_type, message) = KimiCode::extract_event_type_and_message(&payload);
 
-                match (event_type, message) {
-                    ("assistant", Some(message)) => {
+                match event_type {
+                    "assistant" => {
                         if !model_reported
                             && let Some(model) = message.get("model").and_then(|v| v.as_str())
                         {
@@ -373,7 +395,7 @@ impl StandardCodingAgentExecutor for KimiCode {
                                 .push_patch(ConversationPatch::add_normalized_entry(index, entry));
                         }
                     }
-                    ("tool", Some(message)) => {
+                    "tool" => {
                         current_assistant_index = None;
                         current_assistant_text.clear();
 
@@ -447,5 +469,104 @@ impl StandardCodingAgentExecutor for KimiCode {
         }
 
         AvailabilityInfo::InstallationFound
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use serde_json::json;
+    use workspace_utils::{log_msg::LogMsg, msg_store::MsgStore};
+
+    use super::KimiCode;
+    use crate::{
+        executors::{AppendPrompt, StandardCodingAgentExecutor},
+        logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
+    };
+
+    #[test]
+    fn extract_event_type_and_message_supports_wrapped_payload() {
+        let payload = json!({
+            "type": "assistant",
+            "message": {
+                "content": "hello"
+            }
+        });
+
+        let (event_type, message) = KimiCode::extract_event_type_and_message(&payload);
+        assert_eq!(event_type, "assistant");
+        assert_eq!(
+            message.get("content").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn extract_event_type_and_message_supports_role_payload() {
+        let payload = json!({
+            "role": "assistant",
+            "content": "hello"
+        });
+
+        let (event_type, message) = KimiCode::extract_event_type_and_message(&payload);
+        assert_eq!(event_type, "assistant");
+        assert_eq!(
+            message.get("content").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn extract_assistant_text_reads_kimi_stream_json_parts() {
+        let message = json!({
+            "role": "assistant",
+            "content": [
+                {"type": "think", "think": "internal"},
+                {"type": "text", "text": "你好，"},
+                {"type": "text", "text": "我是 Kimi。"}
+            ]
+        });
+
+        let text = KimiCode::extract_assistant_text(&message);
+        assert_eq!(text, "你好，我是 Kimi。");
+    }
+
+    #[tokio::test]
+    async fn normalize_logs_supports_role_stream_json_payload() {
+        let executor = KimiCode {
+            append_prompt: AppendPrompt::default(),
+            model: None,
+            yolo: None,
+            cmd: Default::default(),
+        };
+        let msg_store = Arc::new(MsgStore::new());
+        let current_dir = std::path::PathBuf::from("/tmp/test-worktree");
+
+        msg_store.push_stdout(format!(
+            "{}\n",
+            r#"{"role":"assistant","content":[{"type":"think","think":"internal"},{"type":"text","text":"我是 Kimi。"}]}"#
+        ));
+        msg_store.push_finished();
+
+        executor.normalize_logs(msg_store.clone(), &current_dir);
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+
+        let mut saw_assistant = false;
+        for item in msg_store.get_history() {
+            if let LogMsg::JsonPatch(patch) = item
+                && let Some((_, entry)) = extract_normalized_entry_from_patch(&patch)
+                && matches!(entry.entry_type, NormalizedEntryType::AssistantMessage)
+                && entry.content.contains("我是 Kimi。")
+            {
+                saw_assistant = true;
+                break;
+            }
+        }
+
+        assert!(
+            saw_assistant,
+            "expected assistant message patch from role payload"
+        );
     }
 }

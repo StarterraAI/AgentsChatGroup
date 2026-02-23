@@ -23,6 +23,7 @@ export interface VariantProps {
   selected: string | null;
   options: string[];
   onChange: (variant: string | null) => void;
+  getLabel?: (variant: string) => string;
   onCustomise?: () => void;
 }
 
@@ -121,7 +122,9 @@ export function ChatBoxBase({
 }: ChatBoxBaseProps) {
   const { t } = useTranslation(['common', 'tasks']);
   const { config } = useUserSystem();
-  const variantLabel = toPrettyCase(variant?.selected || 'DEFAULT');
+  const resolveVariantLabel = (variantName: string) =>
+    variant?.getLabel?.(variantName) ?? toPrettyCase(variantName);
+  const variantLabel = resolveVariantLabel(variant?.selected || 'DEFAULT');
   const variantOptions = variant?.options ?? [];
 
   const isDragActive = dropzone?.isDragActive ?? false;
@@ -219,7 +222,7 @@ export function ChatBoxBase({
                       }
                       onClick={() => variant?.onChange(variantName)}
                     >
-                      {toPrettyCase(variantName)}
+                      {resolveVariantLabel(variantName)}
                     </DropdownMenuItem>
                   ))}
                   {variant?.onCustomise && (

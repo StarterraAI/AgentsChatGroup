@@ -993,6 +993,34 @@
     transition: background-color 0.15s ease;
   }
 
+  .new-design .chat-session-message-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .new-design .chat-session-context-compacted-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 -8px;
+    padding: 0 8px;
+    color: var(--chat-session-text-tertiary);
+    font-size: 10px;
+    line-height: 1.2;
+    letter-spacing: 0.05em;
+  }
+
+  .new-design .chat-session-context-compacted-separator-line {
+    flex: 1 1 auto;
+    height: 1px;
+    background: hsl(var(--border) / 0.65);
+  }
+
+  .new-design .chat-session-context-compacted-separator-text {
+    white-space: nowrap;
+  }
+
   .new-design .chat-session-message-row:hover {
     background: var(--chat-session-bg-secondary);
   }

@@ -17,7 +17,11 @@ import { useEntries, useTokenUsage } from '@/contexts/EntriesContext';
 import { useReviewOptional } from '@/contexts/ReviewProvider';
 import { useActions } from '@/contexts/ActionsContext';
 import { useTodos } from '@/hooks/useTodos';
-import { getLatestProfileFromProcesses } from '@/utils/executor';
+import {
+  getLatestProfileFromProcesses,
+  getVariantDisplayLabel,
+  isOpencodeExecutor,
+} from '@/utils/executor';
 import { useExecutorSelection } from '@/hooks/useExecutorSelection';
 import { useSessionMessageEditor } from '@/hooks/useSessionMessageEditor';
 import { useSessionQueueInteraction } from '@/hooks/useSessionQueueInteraction';
@@ -353,6 +357,12 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
       }
     },
     [setVariantFromHook, saveToScratch, localMessage, effectiveExecutor]
+  );
+
+  const getVariantLabel = useCallback(
+    (variant: string) =>
+      getVariantDisplayLabel(effectiveExecutor, variant, profiles),
+    [effectiveExecutor, profiles]
   );
 
   // Navigate to agent settings to customise variants
@@ -739,6 +749,9 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
         selected: selectedVariant,
         options: variantOptions,
         onChange: setSelectedVariant,
+        getLabel: isOpencodeExecutor(effectiveExecutor)
+          ? getVariantLabel
+          : undefined,
         onCustomise: handleCustomise,
       }}
       session={{

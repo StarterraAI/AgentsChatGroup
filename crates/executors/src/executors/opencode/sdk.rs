@@ -959,15 +959,7 @@ pub async fn send_abort(
 }
 
 fn parse_model(model: &str) -> Option<ModelSpec> {
-    let (provider_id, model_id) = match model.split_once('/') {
-        Some((provider, rest)) => (provider.to_string(), rest.to_string()),
-        None => (model.to_string(), String::new()),
-    };
-
-    Some(ModelSpec {
-        provider_id,
-        model_id,
-    })
+    parse_model_strict(model)
 }
 
 fn parse_model_strict(model: &str) -> Option<ModelSpec> {

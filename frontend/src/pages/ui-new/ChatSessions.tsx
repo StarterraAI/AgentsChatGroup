@@ -24,6 +24,14 @@ import { ApiError, chatApi, configApi } from '@/lib/api';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import { getActualTheme } from '@/utils/theme';
+import {
+  extractExecutorProfileVariant,
+  formatExecutorModelLabel,
+  getVariantDisplayLabel,
+  getVariantModelName,
+  getVariantOptions as getExecutorVariantOptions,
+  withExecutorProfileVariant,
+} from '@/utils/executor';
 import { SettingsDialog } from '@/components/ui-new/dialogs/SettingsDialog';
 
 import {
@@ -541,6 +549,7 @@ export function ChatSessions() {
     setWorkspaceAgentId(null);
     setIsAddMemberOpen(false);
     setNewMemberName('');
+    setNewMemberVariant('DEFAULT');
     setNewMemberPrompt('');
     setNewMemberWorkspace('');
     setMemberError(null);
@@ -619,37 +628,37 @@ export function ChatSessions() {
 
   const getModelName = useCallback(
     (runnerType: string, variant?: string): string | null => {
-      if (!profiles) return null;
-      const executorConfig = profiles[runnerType];
-      if (!executorConfig) return null;
-      const variantKey =
-        variant && variant in executorConfig
-          ? variant
-          : 'DEFAULT' in executorConfig
-            ? 'DEFAULT'
-            : Object.keys(executorConfig)[0];
-      if (!variantKey) return null;
-      const variantConfig = executorConfig[variantKey];
-      if (!variantConfig) return null;
-      const innerConfig = Object.values(variantConfig)[0] as
-        | { model?: string | null }
-        | undefined;
-      return innerConfig?.model ?? null;
+      return getVariantModelName(
+        runnerType as BaseCodingAgent,
+        variant ?? null,
+        profiles
+      );
     },
+    [profiles]
+  );
+
+  const getModelDisplayName = useCallback(
+    (runnerType: string, modelName: string | null): string | null =>
+      formatExecutorModelLabel(runnerType as BaseCodingAgent, modelName),
+    []
+  );
+
+  const getVariantLabel = useCallback(
+    (runnerType: string, variant: string): string =>
+      getVariantDisplayLabel(
+        runnerType as BaseCodingAgent,
+        variant,
+        profiles
+      ),
     [profiles]
   );
 
   const getVariantOptions = useCallback(
     (runnerType: string): string[] => {
-      if (!profiles) return [];
-      const executorConfig = profiles[runnerType];
-      if (!executorConfig) return [];
-      const variants = Object.keys(executorConfig);
-      return variants.sort((a, b) => {
-        if (a === 'DEFAULT') return -1;
-        if (b === 'DEFAULT') return 1;
-        return a.localeCompare(b);
-      });
+      return getExecutorVariantOptions(
+        runnerType as BaseCodingAgent,
+        profiles
+      );
     },
     [profiles]
   );
@@ -833,15 +842,21 @@ export function ChatSessions() {
 
   // Set default variant when runner type changes
   useEffect(() => {
-    if (memberVariantOptions.length > 0) {
-      const defaultVariant = memberVariantOptions.includes('DEFAULT')
-        ? 'DEFAULT'
-        : memberVariantOptions[0];
-      setNewMemberVariant(defaultVariant);
-    } else {
-      setNewMemberVariant('DEFAULT');
+    if (memberVariantOptions.length === 0) {
+      if (newMemberVariant !== 'DEFAULT') {
+        setNewMemberVariant('DEFAULT');
+      }
+      return;
     }
-  }, [newMemberRunnerType, memberVariantOptions]);
+
+    if (memberVariantOptions.includes(newMemberVariant)) return;
+    const defaultVariant = memberVariantOptions.includes('DEFAULT')
+      ? 'DEFAULT'
+      : memberVariantOptions[0];
+    if (defaultVariant) {
+      setNewMemberVariant(defaultVariant);
+    }
+  }, [memberVariantOptions, newMemberVariant]);
 
   // Sync agent states from session agents
   useEffect(() => {
@@ -1748,6 +1763,7 @@ export function ChatSessions() {
     const runnerType = newMemberRunnerType.trim();
     const prompt = newMemberPrompt.trim();
     const workspacePathVal = newMemberWorkspace.trim();
+    const selectedVariant = newMemberVariant.trim() || 'DEFAULT';
 
     if (!name) {
       setMemberError('AI member name is required.');
@@ -1802,11 +1818,16 @@ export function ChatSessions() {
     let nameChanged = false;
     let runnerChanged = false;
     let promptChanged = false;
+    let variantChanged = false;
     let workspaceChanged = false;
     if (editingMember) {
       nameChanged = editingMember.agent.name !== name;
       runnerChanged = editingMember.agent.runner_type !== runnerType;
       promptChanged = (editingMember.agent.system_prompt ?? '') !== prompt;
+      const existingVariant =
+        extractExecutorProfileVariant(editingMember.agent.tools_enabled) ??
+        'DEFAULT';
+      variantChanged = existingVariant !== selectedVariant;
       workspaceChanged =
         (editingMember.sessionAgent.workspace_path ?? '') !== workspacePathVal;
 
@@ -1826,6 +1847,7 @@ export function ChatSessions() {
         !nameChanged &&
         !runnerChanged &&
         !promptChanged &&
+        !variantChanged &&
         !workspaceChanged
       ) {
         setEditingMember(null);
@@ -1841,17 +1863,22 @@ export function ChatSessions() {
     try {
       if (editingMember) {
         const agentId = editingMember.agent.id;
+        const toolsEnabledPayload = withExecutorProfileVariant(
+          editingMember.agent.tools_enabled,
+          selectedVariant
+        );
         const updatePayload = {
           name: nameChanged ? name : null,
           runner_type: runnerChanged ? runnerType : null,
           system_prompt: promptChanged ? prompt : null,
-          tools_enabled: null,
+          tools_enabled: variantChanged ? toolsEnabledPayload : null,
         };
 
         if (
           updatePayload.name ||
           updatePayload.runner_type ||
-          updatePayload.system_prompt
+          updatePayload.system_prompt ||
+          updatePayload.tools_enabled
         ) {
           await chatApi.updateAgent(agentId, updatePayload);
         }
@@ -1872,16 +1899,27 @@ export function ChatSessions() {
         const existing = agents.find((agent) => agent.name === name);
         let agentId = existing?.id ?? null;
         if (existing) {
+          const existingVariant =
+            extractExecutorProfileVariant(existing.tools_enabled) ?? 'DEFAULT';
+          const existingVariantChanged = existingVariant !== selectedVariant;
+          const existingToolsEnabled = withExecutorProfileVariant(
+            existing.tools_enabled,
+            selectedVariant
+          );
           const updatePayload = {
             name: null,
             runner_type:
               existing.runner_type !== runnerType ? runnerType : null,
             system_prompt:
               (existing.system_prompt ?? '') !== prompt ? prompt : null,
-            tools_enabled: null,
+            tools_enabled: existingVariantChanged ? existingToolsEnabled : null,
           };
 
-          if (updatePayload.runner_type || updatePayload.system_prompt) {
+          if (
+            updatePayload.runner_type ||
+            updatePayload.system_prompt ||
+            updatePayload.tools_enabled
+          ) {
             const updated = await chatApi.updateAgent(
               existing.id,
               updatePayload
@@ -1893,7 +1931,7 @@ export function ChatSessions() {
             name,
             runner_type: runnerType,
             system_prompt: prompt,
-            tools_enabled: null,
+            tools_enabled: withExecutorProfileVariant({}, selectedVariant),
           });
           agentId = created.id;
         }
@@ -1917,6 +1955,7 @@ export function ChatSessions() {
       ]);
 
       setNewMemberName('');
+      setNewMemberVariant('DEFAULT');
       setNewMemberPrompt('');
       setNewMemberWorkspace('');
       setMemberError(null);
@@ -1948,6 +1987,9 @@ export function ChatSessions() {
     setEditingMember(member);
     setNewMemberName(member.agent.name);
     setNewMemberRunnerType(member.agent.runner_type);
+    setNewMemberVariant(
+      extractExecutorProfileVariant(member.agent.tools_enabled) ?? 'DEFAULT'
+    );
     setNewMemberPrompt(member.agent.system_prompt ?? '');
     setNewMemberWorkspace(member.sessionAgent.workspace_path ?? '');
     setMemberError(null);
@@ -2478,11 +2520,14 @@ export function ChatSessions() {
         availabilityLabel={availabilityLabel}
         memberVariantOptions={memberVariantOptions}
         getModelName={getModelName}
+        getModelDisplayName={getModelDisplayName}
+        getVariantLabel={getVariantLabel}
         onOpenAddMember={() => {
           setIsAddMemberOpen(true);
           setMemberError(null);
           setEditingMember(null);
           setNewMemberName('');
+          setNewMemberVariant('DEFAULT');
           setNewMemberPrompt('');
           setNewMemberWorkspace('');
           setIsPromptEditorOpen(false);
@@ -2492,6 +2537,7 @@ export function ChatSessions() {
           setIsAddMemberOpen(false);
           setMemberError(null);
           setEditingMember(null);
+          setNewMemberVariant('DEFAULT');
           setIsPromptEditorOpen(false);
           setPromptFileError(null);
         }}
