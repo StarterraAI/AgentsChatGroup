@@ -1,6 +1,6 @@
 [package]
 name = "review"
-version = "0.2.6-34.0"
+version = "0.2.3-1.0"
 edition = "2024"
 publish = false
 

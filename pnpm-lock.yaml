@@ -120,8 +120,8 @@ importers:
         specifier: ^3.5.0
         version: 3.5.0
       '@tanstack/electric-db-collection':
-        specifier: ^0.2.6
-        version: 0.2.6(typescript@5.9.2)
+        specifier: ^0.2.3
+        version: 0.2.3(typescript@5.9.2)
       '@tanstack/react-db':
         specifier: ^0.1.50
         version: 0.1.50(react@18.3.1)(typescript@5.9.2)
@@ -1854,7 +1854,7 @@ packages:
     resolution: {integrity: sha512-eq+PpuutUyubXu+ycC1GIiVwBs86NF/8yYJJAKSpPcJLWl6R/761F1H4F/9ziX6zKezltFUH1ah3Cz8Ah+KJrw==}
     engines: {node: '>=18'}
 
-  '@tanstack/electric-db-collection@0.2.6':
+  '@tanstack/electric-db-collection@0.2.3':
     resolution: {integrity: sha512-3J5mLxQ+PWwAxwsJy3Paygfd8dwUcs/oy1RxWjkIowRkYc1JA9x2/KSzX7ovzmYWbD87juHeLb73leuaWmqhow==}
 
   '@tanstack/form-core@1.24.4':
@@ -5491,7 +5491,7 @@ snapshots:
 
   '@tanstack/devtools-event-client@0.3.4': {}
 
-  '@tanstack/electric-db-collection@0.2.6(typescript@5.9.2)':
+  '@tanstack/electric-db-collection@0.2.3(typescript@5.9.2)':
     dependencies:
       '@electric-sql/client': 1.2.0
       '@standard-schema/spec': 1.0.0

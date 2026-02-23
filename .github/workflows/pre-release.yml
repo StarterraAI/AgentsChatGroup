@@ -115,8 +115,9 @@ jobs:
 
           # Update root package.json based on base version
           if [[ "${{ github.event.inputs.version_type }}" == "prerelease" ]]; then
-            # For prerelease, align to stable release_base_version first,
-            # then increment to a numeric prerelease.
+            # For prerelease, align to stable release_base_version and keep
+            # the same major.minor.patch without bumping.
+            # Then append a numeric prerelease identifier.
             # MSI requires a numeric prerelease identifier (<= 65535).
             npm version $release_base_version --no-git-tag-version --allow-same-version
 
@@ -127,9 +128,8 @@ jobs:
             msi_prerelease_id=$(( (msi_prerelease_id - 1) % 65535 + 1 ))
             echo "MSI-compatible prerelease id: $msi_prerelease_id"
 
-            npm version prerelease --preid="$msi_prerelease_id" --no-git-tag-version
-
-            new_version=$(node -p "require('./package.json').version")
+            new_version="${release_base_version}-${msi_prerelease_id}"
+            npm version "$new_version" --no-git-tag-version --allow-same-version
             new_tag="v${new_version}.${timestamp}"
           else
             # For regular releases, use release_base_version and bump it
