@@ -1,6 +1,6 @@
 [package]
 name = "agents-chatgroup-desktop"
-version = "0.2.2"
+version = "0.2.3-main.0"
 description = "Agents Chatgroup Desktop"
 authors = ["StarTerra AI"]
 edition = "2021"

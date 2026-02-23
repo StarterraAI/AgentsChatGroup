@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "agents-chatgroup",
-    "version": "0.2.2"
+    "version": "0.2.3-main.0"
   },
   "tauri": {
     "allowlist": {
