@@ -51,6 +51,7 @@ const MAX_AGENT_CHAIN_DEPTH: u32 = 5;
 const AGENTS_CHATGROUP_DIR: &str = ".agents_chatgroup";
 const RUNS_DIR_NAME: &str = ".runs";
 const CONTEXT_DIR_NAME: &str = ".context";
+const RESERVED_USER_HANDLE: &str = "you";
 
 struct DiffInfo {
     truncated: bool,
@@ -356,6 +357,18 @@ impl ChatRunner {
         let session_id = session.id;
         let mentions = message.mentions.0.clone();
         for mention in mentions {
+            if message.sender_type == ChatSenderType::Agent
+                && mention.eq_ignore_ascii_case(RESERVED_USER_HANDLE)
+            {
+                tracing::debug!(
+                    session_id = %session_id,
+                    message_id = %message.id,
+                    mention = mention,
+                    "skipping reserved user mention in agent message"
+                );
+                continue;
+            }
+
             let runner = self.clone();
             let message_clone = message.clone();
             tokio::spawn(async move {
@@ -545,6 +558,18 @@ impl ChatRunner {
         mention: &str,
         source_message: &ChatMessage,
     ) -> Result<(), ChatRunnerError> {
+        if source_message.sender_type == ChatSenderType::Agent
+            && mention.eq_ignore_ascii_case(RESERVED_USER_HANDLE)
+        {
+            tracing::debug!(
+                session_id = %session_id,
+                message_id = %source_message.id,
+                mention = mention,
+                "skipping reserved user mention in agent message"
+            );
+            return Ok(());
+        }
+
         let resolved = self
             .resolve_session_agent_for_mention(session_id, mention)
             .await;
