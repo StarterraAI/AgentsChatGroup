@@ -206,6 +206,7 @@ pnpm dev -- --port $env:FRONTEND_PORT --host
 
 1. Fork → feature branch → PR
 2. 大改动请先开 Issue 讨论
+3. 请遵守我们的[行为准则](./CODE_OF_CONDUCT.md)
 
 ## 社区
 

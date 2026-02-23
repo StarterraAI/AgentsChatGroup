@@ -223,6 +223,7 @@ We welcome contributions! Check what's needed in [Issues](https://github.com/Sta
 
 1. Fork → feature branch → PR
 2. Please open an issue before large changes
+3. Please follow our [Code of Conduct](./CODE_OF_CONDUCT.md)
 
 ## Community
 
