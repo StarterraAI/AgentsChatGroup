@@ -236,6 +236,7 @@ export function useChatWebSocket(
     };
   }, [
     activeSessionId,
+    queryClient,
     handleMessageNew,
     handleAgentDelta,
     handleAgentState,
