@@ -176,11 +176,30 @@ fn split_command_line(input: &str) -> Result<Vec<String>, CommandBuildError> {
     }
 }
 
+/// Validate that a base command override does not contain shell metacharacter sequences
+/// that could be used for command injection. This is a defense-in-depth measure: the
+/// actual execution path uses shlex/winsplit tokenisation and direct process spawning
+/// (no shell involved), so these sequences are already inert — but we reject them
+/// proactively in case the execution model ever changes or a tampered profiles.json
+/// is loaded.
+fn validate_base_command_override(base: &str) -> Result<(), CommandBuildError> {
+    const DANGEROUS_PATTERNS: &[&str] = &[";", "&&", "||", "`", "$(", "${", ">>", "<<"];
+    for pattern in DANGEROUS_PATTERNS {
+        if base.contains(pattern) {
+            return Err(CommandBuildError::InvalidShellParams(format!(
+                "base command override contains disallowed shell sequence: '{pattern}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn apply_overrides(
     builder: CommandBuilder,
     overrides: &CmdOverrides,
 ) -> Result<CommandBuilder, CommandBuildError> {
     let builder = if let Some(ref base) = overrides.base_command_override {
+        validate_base_command_override(base)?;
         builder.override_base(base.clone())
     } else {
         builder
