@@ -38,6 +38,24 @@ export const splitLines = (value: string): string[] => {
 };
 
 /**
+ * Formats a token count using K/M suffixes for large numbers.
+ * Examples: 999 → "999", 1000 → "1K", 1200 → "1.2K", 1500000 → "1.5M"
+ */
+export function formatTokenCount(tokens: number): string {
+  const fmt = (n: number): string => {
+    const s = n.toFixed(1);
+    return s.endsWith('.0') ? s.slice(0, -2) : s;
+  };
+  if (tokens >= 1_000_000) {
+    return `${fmt(tokens / 1_000_000)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${fmt(tokens / 1_000)}K`;
+  }
+  return tokens.toString();
+}
+
+/**
  * Splits a message into title (max 100 chars) and description.
  * - First line becomes the title (truncated at word boundary if > 100 chars)
  * - Overflow from first line + remaining lines become description

@@ -16,10 +16,12 @@ import { Badge } from '@/components/ui/badge';
 import { PrimaryButton } from '@/components/ui-new/primitives/PrimaryButton';
 import { Tooltip } from '@/components/ui-new/primitives/Tooltip';
 import { formatDateShortWithTime } from '@/utils/date';
+import { formatTokenCount } from '@/utils/string';
 
 export interface ChatHeaderProps {
   activeSession: ChatSession | null;
   messageCount: number;
+  totalTokens?: number;
   memberCount: number;
   isSearchOpen: boolean;
   searchQuery: string;
@@ -50,6 +52,7 @@ export interface ChatHeaderProps {
 export function ChatHeader({
   activeSession,
   messageCount,
+  totalTokens,
   memberCount,
   isSearchOpen,
   searchQuery,
@@ -183,6 +186,11 @@ export function ChatHeader({
         )}
         {activeSession && (
           <div className="chat-session-header-meta text-xs text-low">
+            {totalTokens !== undefined && totalTokens > 0 && (
+              <span className="mr-1">
+                {formatTokenCount(totalTokens)} tokens /
+              </span>
+            )}
             {t('header.created')} {formatDateShortWithTime(activeSession.created_at)} /
             {t('header.totalMessages')}: {messageCount}
           </div>

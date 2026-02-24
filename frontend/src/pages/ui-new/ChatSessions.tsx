@@ -705,6 +705,26 @@ export function ChatSessions() {
     [messageList]
   );
 
+  const totalTokens = useMemo(() => {
+    let sum = 0;
+    for (const message of messageList) {
+      const meta = message.meta;
+      if (
+        meta &&
+        typeof meta === 'object' &&
+        !Array.isArray(meta) &&
+        'token_usage' in meta
+      ) {
+        const tokenUsage = (meta as { token_usage?: { total_tokens?: number } })
+          .token_usage;
+        if (typeof tokenUsage?.total_tokens === 'number') {
+          sum += tokenUsage.total_tokens;
+        }
+      }
+    }
+    return sum;
+  }, [messageList]);
+
   const runHistory = useRunHistory(messages);
 
   const activeSession = useMemo(
@@ -2207,6 +2227,7 @@ export function ChatSessions() {
         <ChatHeader
           activeSession={activeSession ?? null}
           messageCount={messageList.length}
+          totalTokens={totalTokens}
           memberCount={sessionMembers.length}
           isSearchOpen={isMessageSearchOpen}
           searchQuery={messageSearchQuery}

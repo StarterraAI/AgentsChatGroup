@@ -27,7 +27,7 @@ use executors::{
         BaseCodingAgent, CancellationToken, ExecutorError, ExecutorExitSignal,
         StandardCodingAgentExecutor,
     },
-    logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
+    logs::{NormalizedEntryType, TokenUsageInfo, utils::patch::extract_normalized_entry_from_patch},
     profile::{ExecutorConfigs, ExecutorProfileId, canonical_variant_key},
 };
 use futures::StreamExt;
@@ -1511,6 +1511,7 @@ impl ChatRunner {
             let mut latest_assistant = String::new();
             let mut agent_session_id: Option<String> = None;
             let mut agent_message_id: Option<String> = None;
+            let mut last_token_usage: Option<TokenUsageInfo> = None;
 
             while let Some(item) = stream.next().await {
                 match item {
@@ -1538,12 +1539,16 @@ impl ChatRunner {
                     }
                     Ok(LogMsg::JsonPatch(patch)) => {
                         if let Some((index, entry)) = extract_normalized_entry_from_patch(&patch) {
-                            let stream_type = match entry.entry_type {
+                            let stream_type = match &entry.entry_type {
                                 NormalizedEntryType::AssistantMessage => {
                                     Some(ChatStreamDeltaType::Assistant)
                                 }
                                 NormalizedEntryType::Thinking => {
                                     Some(ChatStreamDeltaType::Thinking)
+                                }
+                                NormalizedEntryType::TokenUsageInfo(usage) => {
+                                    last_token_usage = Some(usage.clone());
+                                    None
                                 }
                                 _ => None,
                             };
@@ -1614,6 +1619,13 @@ impl ChatRunner {
                             "finished_at": Utc::now().to_rfc3339(),
                             "chain_depth": chain_depth + 1,
                         });
+
+                        if let Some(ref usage) = last_token_usage {
+                            meta["token_usage"] = serde_json::json!({
+                                "total_tokens": usage.total_tokens,
+                                "model_context_window": usage.model_context_window,
+                            });
+                        }
 
                         if context_compacted {
                             meta["context_compacted"] = true.into();
