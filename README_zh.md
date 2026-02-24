@@ -103,7 +103,7 @@ npx agents-chatgroup
 
 ## AI 团队预设
 
-无需重复配置同一批 Agent。AgentsChatGroup 内置 **21 个成员预设** 和 **8 个团队预设**，可一键导入，直接复用提示词。
+无需重复配置同一批 Agent。AgentsChatGroup 内置 **22 个成员预设** 和 **8 个团队预设**，可一键导入，直接复用提示词。
 
 ![AgentsChatGroup_AddTeam](docs/images/add_team.png)
 
@@ -143,6 +143,7 @@ npx agents-chatgroup
 |----------|---------|
 | **Agent 支持** | Claude Code · Gemini CLI · Codex · Amp · QWen Coder · 其他热门 Agent |
 | **协作能力** | 群聊 · 上下文共享 · @Mention 交接 · 任务追踪 · 会话归档 |
+| **团队预设** | 22 个内置成员预设 · 8 个内置团队预设 · 一键导入团队 · 支持完整 CRUD 的自定义预设 |
 | **配置管理** | 统一 MCP 配置 · 灵活环境变量 |
 | **平台支持** | 桌面应用（Windows / macOS / Linux） · Web页面应用 |
 | **即将推出** | 更紧凑的上下文优化 · 更多 Agent 集成 |

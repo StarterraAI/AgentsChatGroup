@@ -73,6 +73,7 @@ const presetRoleIcons: Record<string, Icon> = {
   prompt_engineer: PencilSimpleLineIcon,
   frontend_engineer: CodeIcon,
   backend_engineer: TerminalIcon,
+  fullstack_engineer: CodeIcon,
   qa_tester: BugBeetleIcon,
   ux_ui_designer: PaintBrushIcon,
   safety_policy_officer: ShieldCheckIcon,

@@ -334,6 +334,22 @@ fn default_chat_presets() -> ChatPresetsConfig {
                 Some("backend"),
             ),
             builtin_member(
+                "fullstack_engineer",
+                "fullstack",
+                "Full-stack Engineer - end-to-end delivery across frontend/backend with contract consistency",
+                build_role_prompt(
+                    "Full-stack Engineer",
+                    "Your goal is to ship complete user-facing capabilities by aligning backend contracts, frontend behavior, and operational reliability.",
+                    &[
+                        "API-to-UI contract alignment and schema evolution control.",
+                        "Cross-layer implementation from data model to interface behavior.",
+                        "Integration validation for auth, errors, observability, and performance.",
+                    ],
+                    "End-to-end feature flow is shippable, reliable, and consistent across backend, frontend, and runtime operations.",
+                ),
+                Some("fullstack"),
+            ),
+            builtin_member(
                 "qa_tester",
                 "qa",
                 "QA / Quality Engineer - test matrix, replay strategy, and release confidence",
