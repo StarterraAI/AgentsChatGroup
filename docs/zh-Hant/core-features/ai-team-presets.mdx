@@ -1,0 +1,130 @@
+---
+title: "AI 團隊預設"
+description: "使用可重複利用的成員預設與團隊預設，幾秒內完成 AI 團隊建立。"
+---
+
+AI 團隊預設可讓您儲存並重複使用 AI 成員配置，不必每次都從零設定代理。
+
+預設分為兩類：
+
+- **成員預設** - 單一 AI 成員配置（角色、角色設定、代理類型）
+- **團隊預設** - 多個成員預設的組合，可一次匯入會話
+
+## 內建預設
+
+AgentsChatGroup 目前內建 **21 個成員預設** 與 **8 個團隊預設**。
+
+### 內建成員預設
+
+| 預設（Handle） | 職責 |
+|---|---|
+| coordinator | 協調員 / PMO - 規劃拆解、跨角色協調與交付對齊 |
+| product | 產品經理 - 範圍、價值與驗收標準 |
+| architect | 系統架構師 - 架構邊界、資料流與取捨 |
+| prompt | 提示工程師 - 提示詞設計與對抗測試 |
+| frontend | 前端工程師 - UI 架構與互動品質 |
+| backend | 後端工程師 - 穩定性、一致性與安全邊界 |
+| qa | QA / 品質工程師 - 測試策略與發布信心 |
+| ux | UX/UI 設計師 - 資訊架構與互動清晰度 |
+| safety | 安全 / 政策官 - 安全、隱私與最小權限控制 |
+| solution | 解決方案經理 - 端到端方案整合與交付簽核 |
+| reviewer | 程式碼審查員 - 正確性、可維護性、安全與效能 |
+| devops | DevOps 工程師 - CI/CD、部署、可觀測性與回滾保障 |
+| product_analyst | 產品分析師 - 指標定義與事件追蹤規劃 |
+| data_analyst | 資料分析師 - 可重現分析與假設說明 |
+| tech_writer | 技術寫作者 - 任務導向文件與上手引導 |
+| researcher | 內容研究員 - 證據蒐集與來源整合 |
+| editor | 內容編輯 - 結構、語氣與事實一致性 |
+| frontier | 前沿研究員 - 假設生成與實驗設計 |
+| marketing | 行銷專員 - 定位、渠道與轉換策略 |
+| video | 影片編輯 - 分鏡執行與製作交付 |
+| market | 市場分析師 - 競品、細分與定價洞察 |
+
+### 內建團隊預設
+
+| 團隊 | 包含成員 |
+|---|---|
+| Full-stack Delivery Team | coordinator + product + architect + backend + frontend + qa + reviewer + devops + safety |
+| AI Prompt Quality Team | coordinator + prompt + qa + backend + safety |
+| Architecture Governance Team | architect + backend + frontend + reviewer + devops + safety |
+| Product Discovery Team | product + ux + product_analyst + data_analyst + market |
+| Content Studio Team | solution + researcher + tech_writer + editor + marketing + video |
+| Growth Marketing Team | product + marketing + market + product_analyst + data_analyst |
+| Research Innovation Team | coordinator + frontier + architect + prompt + product + data_analyst |
+| Rapid Bugfix Team | coordinator + backend + frontend + qa + reviewer |
+
+<Note>
+內建預設不可刪除。您可以將其停用以隱藏在快速新增清單，或先複製再建立自訂版本。
+</Note>
+
+## 管理預設
+
+開啟 **設定 -> 預設**，可管理所有成員與團隊範本。
+
+### 成員預設分頁
+
+- **新增** 自訂成員預設（名稱、代理類型、角色設定）
+- **編輯** 既有自訂預設
+- **複製** 任意預設（內建或自訂）作為起點
+- **停用** 預設（僅隱藏，不刪除）
+- **刪除** 不再需要的自訂預設
+
+### 團隊預設分頁
+
+- **新增** 團隊（選擇成員預設並命名）
+- **編輯** 自訂團隊的成員
+- **複製** 任意團隊預設建立變體
+- **停用** 團隊（從匯入清單隱藏）
+- **刪除** 自訂團隊
+
+## 在會話中使用預設
+
+### 新增成員預設
+
+在聊天右側 **AI 成員側欄**：
+
+1. 點擊成員清單上方的 **快速新增成員**
+2. 瀏覽可用成員預設
+3. 點擊目標預設，立即加入目前會話
+
+新成員會套用預設中的名稱、代理類型與角色設定建立。新增後仍可調整工作區路徑、執行器等欄位。
+
+### 匯入團隊預設
+
+1. 在 AI 成員側欄點擊 **匯入團隊**
+2. 選擇要匯入的團隊預設
+3. 查看 **匯入預覽**，每位成員會標記為：
+   - **Created** - 將建立新成員
+   - **Reused** - 已存在同名且同設定成員
+   - **Auto-renamed** - 名稱衝突但設定不同，會自動加上 `_2`（或更高後綴）
+4. 確認匯入
+
+<Tip>
+匯入預覽可在執行前發現命名衝突。若同名但設定不同，系統會自動重新命名新匯入成員。
+</Tip>
+
+### 衝突處理規則
+
+匯入團隊時，系統會自動套用以下規則：
+
+| 情境 | 處理方式 |
+|---|---|
+| 同名且同設定 | 重用現有成員，不建立重複 |
+| 同名但設定不同 | 建立新成員並加上 `_2`（或 `_3` 等）後綴 |
+| 成員已在會話中 | 保留現有成員，不做變更 |
+
+## 封存會話
+
+在封存會話中，**匯入控制會被停用**。您無法新增成員或匯入團隊。
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="AI 成員" icon="robot" href="/zh-Hant/core-features/ai-members">
+    了解如何手動新增與設定單一 AI 成員
+  </Card>
+
+  <Card title="任務協作" icon="comments" href="/zh-Hant/core-features/task-collaboration">
+    指派任務給團隊，並透過 @提及讓代理協作
+  </Card>
+</CardGroup>

@@ -1,0 +1,128 @@
+---
+title: "Préréglages d'équipe AI"
+description: "Assemblez rapidement votre équipe AI avec des préréglages de membres et d'équipes réutilisables."
+---
+
+Les préréglages d'équipe AI vous permettent d'enregistrer et de réutiliser des configurations de membres AI, au lieu de tout reconfigurer à chaque session.
+
+Il existe deux types de préréglages :
+
+- **Préréglages de membre** - configuration d'un agent AI individuel (rôle, réglage de rôle, type d'agent)
+- **Préréglages d'équipe** - groupe de préréglages de membres importable en une seule fois
+
+## Préréglages intégrés
+
+AgentsChatGroup inclut actuellement **21 préréglages de membres** et **8 préréglages d'équipe** intégrés.
+
+### Préréglages de membres intégrés
+
+| Préréglage (Handle) | Rôle |
+|---|---|
+| coordinator | Coordinateur / PMO - planification, orchestration et alignement de livraison |
+| product | Product Manager - périmètre, valeur et critères d'acceptation |
+| architect | Architecte système - frontières, flux de données et arbitrages |
+| prompt | Prompt Engineer - conception de prompts et tests adversariaux |
+| frontend | Ingénieur Frontend - architecture UI et qualité d'interaction |
+| backend | Ingénieur Backend - fiabilité, cohérence et sécurité |
+| qa | QA / Qualité - stratégie de test et confiance de livraison |
+| ux | Designer UX/UI - architecture d'information et clarté d'usage |
+| safety | Responsable sécurité/politiques - sécurité, vie privée, moindre privilège |
+| solution | Solution Manager - packaging end-to-end et préparation de validation |
+| reviewer | Relecteur de code - correction, maintenabilité, sécurité, performance |
+| devops | Ingénieur DevOps - CI/CD, déploiement, observabilité, rollback |
+| product_analyst | Analyste produit - définition des métriques et instrumentation |
+| data_analyst | Analyste data - analyses reproductibles et hypothèses explicites |
+| tech_writer | Rédacteur technique - documentation orientée tâches et onboarding |
+| researcher | Chercheur contenu - collecte de preuves et synthèse des sources |
+| editor | Éditeur contenu - structure, ton et cohérence factuelle |
+| frontier | Chercheur frontier - génération d'hypothèses et plan d'expériences |
+| marketing | Spécialiste marketing - positionnement, canaux et conversion |
+| video | Monteur vidéo - exécution storyboard et handoff production |
+| market | Analyste marché - concurrence, segmentation et prix |
+
+### Préréglages d'équipes intégrés
+
+| Équipe | Membres inclus |
+|---|---|
+| Full-stack Delivery Team | coordinator + product + architect + backend + frontend + qa + reviewer + devops + safety |
+| AI Prompt Quality Team | coordinator + prompt + qa + backend + safety |
+| Architecture Governance Team | architect + backend + frontend + reviewer + devops + safety |
+| Product Discovery Team | product + ux + product_analyst + data_analyst + market |
+| Content Studio Team | solution + researcher + tech_writer + editor + marketing + video |
+| Growth Marketing Team | product + marketing + market + product_analyst + data_analyst |
+| Research Innovation Team | coordinator + frontier + architect + prompt + product + data_analyst |
+| Rapid Bugfix Team | coordinator + backend + frontend + qa + reviewer |
+
+<Note>
+Les préréglages intégrés ne peuvent pas être supprimés. Vous pouvez les désactiver pour les masquer de la liste rapide, ou les copier pour créer une variante personnalisée.
+</Note>
+
+## Gérer les préréglages
+
+Ouvrez **Paramètres -> Préréglages** pour gérer les modèles de membres et d'équipes.
+
+### Onglet préréglages de membres
+
+- **Ajouter** un préréglage membre personnalisé
+- **Modifier** un préréglage personnalisé existant
+- **Copier** n'importe quel préréglage comme point de départ
+- **Désactiver** un préréglage sans le supprimer
+- **Supprimer** les préréglages personnalisés inutiles
+
+### Onglet préréglages d'équipes
+
+- **Ajouter** une équipe en sélectionnant des membres
+- **Modifier** les membres d'une équipe personnalisée
+- **Copier** un préréglage d'équipe pour créer une variante
+- **Désactiver** une équipe pour la masquer de l'import
+- **Supprimer** les équipes personnalisées
+
+## Utiliser les préréglages dans une session
+
+### Ajouter un préréglage de membre
+
+Dans la **barre latérale AI Members** à droite du chat :
+
+1. Cliquez sur **Ajout rapide de membres** au-dessus de la liste des membres
+2. Parcourez les préréglages disponibles
+3. Cliquez sur un préréglage pour l'ajouter instantanément à la session
+
+Le nouveau membre est créé avec son nom, son type d'agent et son réglage de rôle. Vous pouvez encore modifier ensuite le chemin de workspace, l'exécuteur, etc.
+
+### Importer un préréglage d'équipe
+
+1. Cliquez sur **Import Team** dans la barre AI Members
+2. Sélectionnez le préréglage d'équipe à importer
+3. Vérifiez la **prévisualisation d'import** :
+   - **Created** - un nouveau membre sera créé
+   - **Reused** - un membre identique existe déjà
+   - **Auto-renamed** - conflit de nom avec config différente, suffixe `_2` (ou plus)
+4. Confirmez l'import
+
+<Tip>
+La prévisualisation permet d'anticiper les conflits de nom. Si un membre du même nom existe avec une configuration différente, le nouveau sera renommé automatiquement.
+</Tip>
+
+### Règles de résolution des conflits
+
+| Scénario | Action |
+|---|---|
+| Même nom + même config | Réutiliser le membre existant |
+| Même nom + config différente | Créer un nouveau membre avec suffixe `_2` (ou `_3`, etc.) |
+| Membre déjà présent dans la session | Conserver le membre existant |
+
+## Sessions archivées
+
+Dans une session archivée, **les contrôles d'import sont désactivés**. Vous ne pouvez pas ajouter de membres ni importer d'équipes.
+
+## Étapes suivantes
+
+<CardGroup cols={2}>
+  <Card title="Membres AI" icon="robot" href="/fr/core-features/ai-members">
+    Ajouter et configurer des membres AI individuellement
+  </Card>
+
+  <Card title="Collaboration de tâches" icon="comments" href="/fr/core-features/task-collaboration">
+    Assigner des tâches et collaborer via les @mentions
+  </Card>
+</CardGroup>

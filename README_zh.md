@@ -101,6 +101,16 @@ npx agents-chatgroup
 
 📚 [完整安装指南 →](https://docs.agentschatgroup.com/getting-started)
 
+## AI 团队预设
+
+无需重复配置同一批 Agent。AgentsChatGroup 内置 **21 个成员预设** 和 **8 个团队预设**，可一键导入，直接复用提示词。
+
+![AgentsChatGroup_AddTeam](docs/images/add_team.png)
+
+你也可以创建并保存自己的自定义预设。导入团队时会先展示预览，明确哪些成员会被创建、复用或重命名，避免意外覆盖。
+
+📚 [团队预设文档 →](https://docs.agentschatgroup.com/core-features/ai-team-presets)
+
 ## 使用场景示例
 
 **🧑‍💻 全栈开发团队**
@@ -115,7 +125,7 @@ npx agents-chatgroup
 **📊 数据管道协作团队**
 > 清洗 Agent 预处理数据 → 分析 Agent 执行查询 → 可视化 Agent 生成图表。每个 Agent 都能无缝承接上一步结果。
 
-更多AI团队等你来建设。
+更多好玩有用的AI团队等你来建设。
 
 ## 有何不同
 
@@ -186,8 +196,6 @@ pnpm i
 $env:FRONTEND_PORT = node scripts/setup-dev-environment.js frontend
 $env:BACKEND_PORT = node scripts/setup-dev-environment.js backend
 $env:VK_ALLOWED_ORIGINS = "http://localhost:$env:FRONTEND_PORT"
-$env:DISABLE_WORKTREE_CLEANUP = "1"
-$env:RUST_LOG = "debug"
 cargo run --bin server
 ```
 

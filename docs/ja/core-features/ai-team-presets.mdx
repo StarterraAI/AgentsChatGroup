@@ -1,0 +1,128 @@
+---
+title: "AI チームプリセット"
+description: "再利用可能なメンバープリセットとチームプリセットで、AI チームをすぐに構成できます。"
+---
+
+AI チームプリセットを使うと、AI メンバー設定を保存して再利用できます。毎回ゼロから設定する必要はありません。
+
+プリセットは 2 種類あります。
+
+- **メンバープリセット** - 単一 AI メンバーの設定（役割、ロール設定、エージェント種別）
+- **チームプリセット** - 複数メンバープリセットの組み合わせを一括でセッションにインポート
+
+## 内蔵プリセット
+
+AgentsChatGroup には現在、**21 個のメンバープリセット** と **8 個のチームプリセット** が内蔵されています。
+
+### 内蔵メンバープリセット
+
+| プリセット（Handle） | 役割 |
+|---|---|
+| coordinator | Coordinator / PMO - 計画分解、オーケストレーション、横断連携 |
+| product | Product Manager - スコープ、価値、受け入れ条件定義 |
+| architect | System Architect - 境界設計、データフロー、トレードオフ判断 |
+| prompt | Prompt Engineer - プロンプト設計と対抗テスト |
+| frontend | Frontend Engineer - UI 設計と操作品質 |
+| backend | Backend Engineer - 信頼性、一貫性、セキュリティ境界 |
+| qa | QA / Quality Engineer - テスト戦略と品質保証 |
+| ux | UX/UI Designer - 情報設計とインタラクション明確化 |
+| safety | Safety / Policy Officer - セキュリティ、プライバシー、最小権限 |
+| solution | Solution Manager - E2E ソリューション統合と受け入れ準備 |
+| reviewer | Code Reviewer - 正確性、保守性、セキュリティ、性能レビュー |
+| devops | DevOps Engineer - CI/CD、デプロイ、可観測性、ロールバック |
+| product_analyst | Product Analyst - 指標設計と計測設計 |
+| data_analyst | Data Analyst - 再現可能な分析と仮説の明示 |
+| tech_writer | Technical Writer - タスク指向ドキュメントとオンボーディング |
+| researcher | Content Researcher - 根拠収集と情報統合 |
+| editor | Content Editor - 構成、トーン、事実整合性 |
+| frontier | Frontier Researcher - 仮説生成と実験計画 |
+| marketing | Marketing Specialist - ポジショニング、チャネル、獲得戦略 |
+| video | Video Editor - ストーリーボード実行と制作引き継ぎ |
+| market | Market Analyst - 競合、セグメント、価格分析 |
+
+### 内蔵チームプリセット
+
+| チーム | 含まれるメンバー |
+|---|---|
+| Full-stack Delivery Team | coordinator + product + architect + backend + frontend + qa + reviewer + devops + safety |
+| AI Prompt Quality Team | coordinator + prompt + qa + backend + safety |
+| Architecture Governance Team | architect + backend + frontend + reviewer + devops + safety |
+| Product Discovery Team | product + ux + product_analyst + data_analyst + market |
+| Content Studio Team | solution + researcher + tech_writer + editor + marketing + video |
+| Growth Marketing Team | product + marketing + market + product_analyst + data_analyst |
+| Research Innovation Team | coordinator + frontier + architect + prompt + product + data_analyst |
+| Rapid Bugfix Team | coordinator + backend + frontend + qa + reviewer |
+
+<Note>
+内蔵プリセットは削除できません。クイック追加一覧から非表示にするには無効化し、カスタマイズする場合は複製して利用してください。
+</Note>
+
+## プリセット管理
+
+**設定 -> プリセット** から、メンバーとチームのテンプレートを管理できます。
+
+### メンバープリセットタブ
+
+- **追加** - カスタムメンバープリセットを作成
+- **編集** - 既存のカスタムプリセットを更新
+- **複製** - 任意のプリセットをコピーして派生作成
+- **無効化** - 削除せずにクイック追加から非表示
+- **削除** - 不要なカスタムプリセットを削除
+
+### チームプリセットタブ
+
+- **追加** - メンバーを選んで新規チームを作成
+- **編集** - カスタムチームのメンバー構成を変更
+- **複製** - 任意のチームプリセットから派生作成
+- **無効化** - インポート一覧から非表示
+- **削除** - 不要なカスタムチームを削除
+
+## セッションでの使い方
+
+### メンバープリセットを追加
+
+チャット右側の **AI Members サイドバー** で：
+
+1. メンバー一覧の上にある **メンバーをクイック追加** をクリック
+2. 利用可能なメンバープリセットを選択
+3. クリックすると即座にセッションへ追加
+
+追加後も、ワークスペースパスや実行器などの項目は編集できます。
+
+### チームプリセットをインポート
+
+1. AI Members サイドバーの **Import Team** をクリック
+2. インポートしたいチームプリセットを選択
+3. **インポートプレビュー** を確認（各メンバーは次の状態で表示）：
+   - **Created** - 新規作成
+   - **Reused** - 同名かつ同設定メンバーを再利用
+   - **Auto-renamed** - 同名だが設定が異なるため `_2` などを付与
+4. インポートを確定
+
+<Tip>
+プレビューで命名衝突を事前に確認できます。同名で設定が異なる場合は自動リネームされます。
+</Tip>
+
+### 衝突解決ルール
+
+| 条件 | 動作 |
+|---|---|
+| 同名 + 同設定 | 既存メンバーを再利用 |
+| 同名 + 異なる設定 | `_2`（または `_3` など）付きで新規作成 |
+| 既にセッション内に存在 | 既存メンバーを保持 |
+
+## アーカイブ済みセッション
+
+アーカイブ済みセッションでは **インポート操作は無効** です。メンバー追加やチームインポートはできません。
+
+## 次のステップ
+
+<CardGroup cols={2}>
+  <Card title="AI メンバー" icon="robot" href="/ja/core-features/ai-members">
+    個別に AI メンバーを追加・設定する方法を確認
+  </Card>
+
+  <Card title="タスク協業" icon="comments" href="/ja/core-features/task-collaboration">
+    @mention でチームにタスクを割り当て、協業フローを回す
+  </Card>
+</CardGroup>

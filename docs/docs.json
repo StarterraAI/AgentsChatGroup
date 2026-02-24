@@ -149,6 +149,7 @@
               "zh-Hant/core-features/chat-session-overview",
               "zh-Hant/core-features/managing-sessions",
               "zh-Hant/core-features/ai-members",
+              "zh-Hant/core-features/ai-team-presets",
               "zh-Hant/core-features/task-collaboration",
               "zh-Hant/core-features/code-review"
             ]
@@ -195,6 +196,7 @@
               "ja/core-features/chat-session-overview",
               "ja/core-features/managing-sessions",
               "ja/core-features/ai-members",
+              "ja/core-features/ai-team-presets",
               "ja/core-features/task-collaboration",
               "ja/core-features/code-review"
             ]
@@ -241,6 +243,7 @@
               "ko/core-features/chat-session-overview",
               "ko/core-features/managing-sessions",
               "ko/core-features/ai-members",
+              "ko/core-features/ai-team-presets",
               "ko/core-features/task-collaboration",
               "ko/core-features/code-review"
             ]
@@ -287,6 +290,7 @@
               "fr/core-features/chat-session-overview",
               "fr/core-features/managing-sessions",
               "fr/core-features/ai-members",
+              "fr/core-features/ai-team-presets",
               "fr/core-features/task-collaboration",
               "fr/core-features/code-review"
             ]
@@ -343,5 +347,4 @@
     }
   }
 }
-
 

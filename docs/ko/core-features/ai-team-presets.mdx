@@ -1,0 +1,128 @@
+---
+title: "AI 팀 프리셋"
+description: "재사용 가능한 멤버/팀 프리셋으로 AI 팀을 빠르게 구성하세요."
+---
+
+AI 팀 프리셋을 사용하면 AI 멤버 구성을 저장하고 재사용할 수 있어, 매번 처음부터 설정하지 않아도 됩니다.
+
+프리셋은 두 가지입니다.
+
+- **멤버 프리셋** - 단일 AI 멤버 설정(역할, 역할 설정, 에이전트 유형)
+- **팀 프리셋** - 여러 멤버 프리셋 조합을 세션에 한 번에 가져오기
+
+## 내장 프리셋
+
+AgentsChatGroup에는 현재 **멤버 프리셋 21개**와 **팀 프리셋 8개**가 내장되어 있습니다.
+
+### 내장 멤버 프리셋
+
+| 프리셋(Handle) | 역할 |
+|---|---|
+| coordinator | Coordinator / PMO - 계획 분해, 오케스트레이션, 교차 역할 정렬 |
+| product | Product Manager - 범위, 가치, 수용 기준 정의 |
+| architect | System Architect - 경계, 데이터 흐름, 트레이드오프 설계 |
+| prompt | Prompt Engineer - 프롬프트 설계와 적대 테스트 |
+| frontend | Frontend Engineer - UI 구조와 상호작용 품질 |
+| backend | Backend Engineer - 신뢰성, 일관성, 보안 경계 |
+| qa | QA / Quality Engineer - 테스트 전략과 릴리스 품질 |
+| ux | UX/UI Designer - 정보 구조와 상호작용 명확성 |
+| safety | Safety / Policy Officer - 보안, 프라이버시, 최소 권한 통제 |
+| solution | Solution Manager - E2E 솔루션 패키징과 승인 준비 |
+| reviewer | Code Reviewer - 정확성, 유지보수성, 보안, 성능 리뷰 |
+| devops | DevOps Engineer - CI/CD, 배포, 관측성, 롤백 안정성 |
+| product_analyst | Product Analyst - 지표 정의와 계측 설계 |
+| data_analyst | Data Analyst - 재현 가능한 분석과 가정 명시 |
+| tech_writer | Technical Writer - 작업 중심 문서와 온보딩 가이드 |
+| researcher | Content Researcher - 근거 수집과 출처 통합 |
+| editor | Content Editor - 구조, 톤, 사실 일관성 편집 |
+| frontier | Frontier Researcher - 가설 수립과 실험 계획 |
+| marketing | Marketing Specialist - 포지셔닝, 채널, 전환 전략 |
+| video | Video Editor - 스토리보드 실행과 제작 핸드오프 |
+| market | Market Analyst - 경쟁, 세분화, 가격 인사이트 |
+
+### 내장 팀 프리셋
+
+| 팀 | 포함 멤버 |
+|---|---|
+| Full-stack Delivery Team | coordinator + product + architect + backend + frontend + qa + reviewer + devops + safety |
+| AI Prompt Quality Team | coordinator + prompt + qa + backend + safety |
+| Architecture Governance Team | architect + backend + frontend + reviewer + devops + safety |
+| Product Discovery Team | product + ux + product_analyst + data_analyst + market |
+| Content Studio Team | solution + researcher + tech_writer + editor + marketing + video |
+| Growth Marketing Team | product + marketing + market + product_analyst + data_analyst |
+| Research Innovation Team | coordinator + frontier + architect + prompt + product + data_analyst |
+| Rapid Bugfix Team | coordinator + backend + frontend + qa + reviewer |
+
+<Note>
+내장 프리셋은 삭제할 수 없습니다. 빠른 추가 목록에서 숨기려면 비활성화하고, 커스텀하려면 복사해서 사용하세요.
+</Note>
+
+## 프리셋 관리
+
+**설정 -> 프리셋**에서 멤버/팀 템플릿을 관리할 수 있습니다.
+
+### 멤버 프리셋 탭
+
+- **추가** - 새 커스텀 멤버 프리셋 생성
+- **수정** - 기존 커스텀 프리셋 수정
+- **복사** - 내장/커스텀 프리셋을 기반으로 새 프리셋 생성
+- **비활성화** - 삭제 없이 빠른 추가 목록에서 숨김
+- **삭제** - 더 이상 필요 없는 커스텀 프리셋 삭제
+
+### 팀 프리셋 탭
+
+- **추가** - 멤버를 선택해 새 팀 생성
+- **수정** - 커스텀 팀의 멤버 구성 변경
+- **복사** - 팀 프리셋 변형 생성
+- **비활성화** - 가져오기 목록에서 숨김
+- **삭제** - 커스텀 팀 삭제
+
+## 세션에서 프리셋 사용
+
+### 멤버 프리셋 추가
+
+채팅 오른쪽 **AI Members 사이드바**에서:
+
+1. 멤버 목록 위의 **멤버 빠른 추가** 클릭
+2. 멤버 프리셋 선택
+3. 클릭 즉시 현재 세션에 추가
+
+추가 후에도 작업 경로, 실행기 등 설정을 편집할 수 있습니다.
+
+### 팀 프리셋 가져오기
+
+1. AI Members 사이드바에서 **Import Team** 클릭
+2. 가져올 팀 프리셋 선택
+3. **가져오기 미리보기** 확인:
+   - **Created** - 새 멤버 생성
+   - **Reused** - 동일 이름/동일 설정 멤버 재사용
+   - **Auto-renamed** - 이름 충돌 + 설정 다름, `_2` 등 접미사 자동 부여
+4. 가져오기 확정
+
+<Tip>
+미리보기 단계에서 이름 충돌을 사전에 확인할 수 있습니다. 설정이 다르면 자동으로 새 이름이 부여됩니다.
+</Tip>
+
+### 충돌 처리 규칙
+
+| 상황 | 처리 |
+|---|---|
+| 동일 이름 + 동일 설정 | 기존 멤버 재사용 |
+| 동일 이름 + 다른 설정 | `_2`(또는 `_3` 등) 붙여 새 멤버 생성 |
+| 멤버가 이미 세션에 있음 | 기존 멤버 유지 |
+
+## 보관된 세션
+
+보관된 세션에서는 **가져오기 기능이 비활성화** 됩니다. 멤버 추가/팀 가져오기를 할 수 없습니다.
+
+## 다음 단계
+
+<CardGroup cols={2}>
+  <Card title="AI 멤버" icon="robot" href="/ko/core-features/ai-members">
+    개별 AI 멤버를 수동으로 추가하고 설정하는 방법 보기
+  </Card>
+
+  <Card title="작업 협업" icon="comments" href="/ko/core-features/task-collaboration">
+    @멘션으로 팀에 작업을 할당하고 협업 흐름 만들기
+  </Card>
+</CardGroup>

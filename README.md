@@ -103,13 +103,9 @@ npx agents-chatgroup
 
 ## AI Team Presets
 
-Stop configuring the same agents over and over. AgentsChatGroup includes **11 built-in member presets** and **5 built-in team presets** you can deploy in one click.
+Stop configuring the same agents over and over. AgentsChatGroup includes **21 built-in member presets** and **8 built-in team presets** you can import in one click.
 
-```
-Settings → Presets → Import Team → "Full-Stack Dev Team"
-→ Architect + Backend Engineer + Frontend Engineer + Code Reviewer
-   added to your session instantly
-```
+![AgentsChatGroup_AddTeam](docs/images/add_team.png)
 
 You can also build and save your own custom presets. When importing a team, a preview shows exactly which members will be created, reused, or renamed — so there are no surprises.
 

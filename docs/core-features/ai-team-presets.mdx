@@ -1,44 +1,57 @@
 ---
 title: "AI Team Presets"
-description: "Instantly assemble your AI team using pre-configured member and team templates — no repetitive setup required"
+description: "Instantly assemble your AI team with reusable member and team templates."
 ---
 
 AI Team Presets let you save and reuse AI member configurations, so you can spin up a full AI team in seconds instead of configuring each agent from scratch every time.
 
 There are two types of presets:
 
-- **Member Presets** — individual AI agent configurations (role, system prompt, agent type)
-- **Team Presets** — curated groups of member presets that can be imported into a session all at once
+- **Member Presets** - individual AI agent configurations (role, system prompt, agent type)
+- **Team Presets** - curated groups of member presets that can be imported into a session all at once
 
 ## Built-in Presets
 
-AgentsChatGroup ships with **11 built-in member presets** and **5 built-in team presets** to get you started immediately.
+AgentsChatGroup ships with **21 built-in member presets** and **8 built-in team presets**.
 
 ### Built-in Member Presets
 
-| Preset | Role |
-|--------|------|
-| Architect | System design and technical planning |
-| Backend Engineer | Server-side implementation |
-| Frontend Engineer | UI and client-side development |
-| Full-stack Engineer | End-to-end feature development |
-| Code Reviewer | Security, performance, and best-practice review |
-| QA Tester | Test planning and execution |
-| DevOps Engineer | CI/CD, infrastructure, and deployment |
-| Data Engineer | Data pipelines and ETL |
-| Product Manager | Requirements, roadmap, and prioritization |
-| Technical Writer | Documentation and user guides |
-| Security Analyst | Vulnerability assessment and hardening |
+| Preset (Handle) | Role |
+|---|---|
+| coordinator | Coordinator / PMO - planning, orchestration, and delivery alignment |
+| product | Product Manager - scope, value, and acceptance criteria |
+| architect | System Architect - boundaries, data flows, and tradeoffs |
+| prompt | Prompt Engineer - prompt design and adversarial testing |
+| frontend | Frontend Engineer - UI architecture and interaction quality |
+| backend | Backend Engineer - reliability, consistency, and security boundaries |
+| qa | QA / Quality Engineer - test strategy and release confidence |
+| ux | UX/UI Designer - information architecture and interaction clarity |
+| safety | Safety / Policy Officer - security, privacy, and least-privilege controls |
+| solution | Solution Manager - end-to-end packaging and sign-off readiness |
+| reviewer | Code Reviewer - correctness, maintainability, security, and performance |
+| devops | DevOps Engineer - CI/CD, deployment, observability, and rollback safety |
+| product_analyst | Product Analyst - metrics definition and instrumentation planning |
+| data_analyst | Data Analyst - reproducible analysis with explicit assumptions |
+| tech_writer | Technical Writer - task-oriented documentation and onboarding clarity |
+| researcher | Content Researcher - evidence collection and source synthesis |
+| editor | Content Editor - structure, tone, and factual consistency |
+| frontier | Frontier Researcher - hypothesis generation and experiment planning |
+| marketing | Marketing Specialist - positioning, channels, and conversion strategy |
+| video | Video Editor - storyboard execution and production handoff |
+| market | Market Analyst - competition, segmentation, and pricing insights |
 
 ### Built-in Team Presets
 
 | Team | Members Included |
-|------|-----------------|
-| Full-Stack Dev Team | Architect + Backend Engineer + Frontend Engineer + Code Reviewer |
-| Content Production | Product Manager + Technical Writer + QA Tester |
-| DevOps & Release | Backend Engineer + DevOps Engineer + Code Reviewer |
-| Security Audit | Security Analyst + Backend Engineer + Code Reviewer |
-| Data Platform | Data Engineer + Backend Engineer + QA Tester |
+|---|---|
+| Full-stack Delivery Team | coordinator + product + architect + backend + frontend + qa + reviewer + devops + safety |
+| AI Prompt Quality Team | coordinator + prompt + qa + backend + safety |
+| Architecture Governance Team | architect + backend + frontend + reviewer + devops + safety |
+| Product Discovery Team | product + ux + product_analyst + data_analyst + market |
+| Content Studio Team | solution + researcher + tech_writer + editor + marketing + video |
+| Growth Marketing Team | product + marketing + market + product_analyst + data_analyst |
+| Research Innovation Team | coordinator + frontier + architect + prompt + product + data_analyst |
+| Rapid Bugfix Team | coordinator + backend + frontend + qa + reviewer |
 
 <Note>
 Built-in presets cannot be deleted. You can disable them to hide them from the quick-add list, or copy them to create a customized version.
@@ -46,7 +59,7 @@ Built-in presets cannot be deleted. You can disable them to hide them from the q
 
 ## Managing Presets
 
-Open **Settings → Presets** to manage all member and team templates.
+Open **Settings -> Presets** to manage all member and team templates.
 
 ### Member Presets Tab
 
@@ -70,24 +83,24 @@ Open **Settings → Presets** to manage all member and team templates.
 
 In the **AI Members sidebar** on the right side of the chat:
 
-1. Click **Add from Preset** under the member list
+1. Click **Quick Add Members** before member list
 2. Browse the available member presets
 3. Click a preset to instantly add that AI member to your session
 
-The new member is created with the preset's name, agent type, and system prompt. You can still edit the member afterward to adjust the workspace path or any other field.
+The new member is created with the preset's name, agent type, and system prompt. You can still edit the member afterward to adjust the workspace path, executor, or any other field.
 
 ### Importing a Team Preset
 
 1. Click **Import Team** in the AI Members sidebar
 2. Select the team preset you want to import
-3. Review the **import preview** — it shows each member and whether they will be:
-   - **Created** — a new member will be added
-   - **Reused** — an existing member with the same name and config is already in the session
-   - **Auto-renamed** — the name conflicts with an existing member but configs differ; a `_2` suffix (or higher) will be appended
+3. Review the **import preview** - it shows each member and whether they will be:
+   - **Created** - a new member will be added
+   - **Reused** - an existing member with the same name and config is already in the session
+   - **Auto-renamed** - the name conflicts with an existing member but configs differ; a `_2` suffix (or higher) will be appended
 4. Confirm the import
 
 <Tip>
-The preview step lets you catch naming conflicts before they happen. If you already have a "Coder" in the session, a Coder preset with different settings will be imported as "Coder_2".
+The preview step lets you catch naming conflicts before they happen. If you already have a member with the same name but different settings, the imported one will be auto-renamed.
 </Tip>
 
 ### Conflict Resolution Rules
@@ -95,10 +108,10 @@ The preview step lets you catch naming conflicts before they happen. If you alre
 When importing a team, AgentsChatGroup applies these rules automatically:
 
 | Scenario | Action |
-|----------|--------|
-| Same name, same config | Reuse existing member — no duplicate created |
+|---|---|
+| Same name, same config | Reuse existing member - no duplicate created |
 | Same name, different config | Create new member with `_2` (or `_3`, etc.) suffix |
-| Member already in the session | Skip — leave existing member unchanged |
+| Member already in the session | Keep existing member unchanged |
 
 ## Archived Sessions
 
