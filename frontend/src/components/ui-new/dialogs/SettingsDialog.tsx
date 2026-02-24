@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   GearIcon,
-  GitBranchIcon,
   CpuIcon,
   PlugIcon,
   CaretLeftIcon,
@@ -32,7 +31,6 @@ const SETTINGS_SECTIONS: {
   { id: 'general', icon: GearIcon },
   { id: 'agents', icon: CpuIcon },
   { id: 'mcp', icon: PlugIcon },
-  { id: 'repos', icon: GitBranchIcon },
   { id: 'presets', icon: UsersThreeIcon },
 ];
 

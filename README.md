@@ -9,6 +9,7 @@
     <a href="https://www.npmjs.com/package/agents-chatgroup"><img alt="npm" src="https://img.shields.io/npm/v/agents-chatgroup?style=flat-square" /></a>
     <a href="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml"><img alt="Build" src="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml/badge.svg" /></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+    <a href="https://discord.gg/UuM87hQB"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20Chat-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   </p>
 
   <p>
@@ -229,8 +230,8 @@ We welcome contributions! Check what's needed in [Issues](https://github.com/Sta
 | | |
 |--|--|
 | 🐛 **Bug Reports** | [GitHub Issues](https://github.com/StarterraAI/AgentsChatGroup/issues) |
-| 💬 **Discussions** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) |
-| 💭 **Community Chat** | *Coming soon* |
+| 💬 **Discussions** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) · [Discord](https://discord.gg/UuM87hQB) |
+| 💭 **Community Chat** | [Discord](https://discord.gg/UuM87hQB) |
 
 ## Acknowledgements
 

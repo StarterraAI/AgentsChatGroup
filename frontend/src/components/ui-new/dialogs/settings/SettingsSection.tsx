@@ -2,14 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { XIcon } from '@phosphor-icons/react';
 
 import { GeneralSettingsSectionContent } from './GeneralSettingsSection';
-import { ReposSettingsSectionContent } from './ReposSettingsSection';
 import { AgentsSettingsSectionContent } from './AgentsSettingsSection';
 import { McpSettingsSectionContent } from './McpSettingsSection';
 import { ChatPresetsSettingsSectionContent } from './ChatPresetsSettingsSection';
 
 export type SettingsSectionType =
   | 'general'
-  | 'repos'
   | 'agents'
   | 'mcp'
   | 'presets';
@@ -17,7 +15,6 @@ export type SettingsSectionType =
 // Section-specific initial state types
 export type SettingsSectionInitialState = {
   general: undefined;
-  repos: undefined;
   agents: { executor?: string; variant?: string } | undefined;
   mcp: undefined;
   presets: undefined;
@@ -38,8 +35,6 @@ export function SettingsSection({
     switch (type) {
       case 'general':
         return <GeneralSettingsSectionContent />;
-      case 'repos':
-        return <ReposSettingsSectionContent />;
       case 'agents':
         return <AgentsSettingsSectionContent />;
       case 'mcp':

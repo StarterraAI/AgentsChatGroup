@@ -9,6 +9,7 @@
     <a href="https://www.npmjs.com/package/agents-chatgroup"><img alt="npm" src="https://img.shields.io/npm/v/agents-chatgroup?style=flat-square" /></a>
     <a href="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml"><img alt="Build" src="https://github.com/StarterraAI/AgentsChatGroup/actions/workflows/pre-release.yml/badge.svg" /></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+    <a href="https://discord.gg/UuM87hQB"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20Chat-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   </p>
 
   <p>
@@ -212,8 +213,8 @@ pnpm dev -- --port $env:FRONTEND_PORT --host
 | | |
 |--|--|
 | 🐛 **Bug 反馈** | [GitHub Issues](https://github.com/StarterraAI/AgentsChatGroup/issues) |
-| 💬 **讨论区** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) |
-| 💭 **社区群聊** | *即将上线* |
+| 💬 **讨论区** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) · [Discord](https://discord.gg/UuM87hQB) |
+| 💭 **社区群聊** | [Discord](https://discord.gg/UuM87hQB) |
 
 ## 致谢
 
