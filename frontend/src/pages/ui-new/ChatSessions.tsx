@@ -171,10 +171,21 @@ export function ChatSessions() {
     agentById,
     sessionMembers,
     mentionAgents,
+    isSessionsLoading,
     isLoading,
   } = useChatData(sessionId ?? null);
 
-  const activeSessionId = sessionId ?? sortedSessions[0]?.id ?? null;
+  const activeSessionExists = useMemo(
+    () =>
+      !!sessionId &&
+      sortedSessions.some((session) => session.id === sessionId),
+    [sessionId, sortedSessions]
+  );
+  const activeSessionId = sessionId
+    ? isSessionsLoading || activeSessionExists
+      ? sessionId
+      : null
+    : sortedSessions[0]?.id ?? null;
   const notificationsRef = useRef(config?.notifications ?? null);
   const sessionTitleByIdRef = useRef<Map<string, string>>(new Map());
   const agentByIdRef = useRef(agentById);
@@ -573,9 +584,18 @@ export function ChatSessions() {
 
   // Navigate to first session if needed
   useEffect(() => {
+    if (isSessionsLoading) return;
+
     if (!sessionId && sortedSessions.length > 0) {
       navigate(`/chat/${sortedSessions[0].id}`, { replace: true });
+      return;
     }
+
+    if (sessionId && sortedSessions.length === 0) {
+      navigate('/chat', { replace: true });
+      return;
+    }
+
     if (
       sessionId &&
       sortedSessions.length > 0 &&
@@ -583,7 +603,7 @@ export function ChatSessions() {
     ) {
       navigate(`/chat/${sortedSessions[0].id}`, { replace: true });
     }
-  }, [navigate, sessionId, sortedSessions]);
+  }, [isSessionsLoading, navigate, sessionId, sortedSessions]);
 
   // Derived state
   const availableRunnerTypes = useMemo(() => {

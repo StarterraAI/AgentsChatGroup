@@ -78,7 +78,18 @@ export function useChatMutations(
 
   const deleteSession = useMutation({
     mutationFn: (id: string) => chatApi.deleteSession(id),
-    onSuccess: () => {
+    onSuccess: (_data, deletedSessionId) => {
+      queryClient.setQueryData<ChatSession[]>(['chatSessions'], (old) =>
+        old ? old.filter((session) => session.id !== deletedSessionId) : []
+      );
+      queryClient.removeQueries({
+        queryKey: ['chatSessionAgents', deletedSessionId],
+        exact: true,
+      });
+      queryClient.removeQueries({
+        queryKey: ['chatMessages', deletedSessionId],
+        exact: true,
+      });
       queryClient.invalidateQueries({ queryKey: ['chatSessions'] });
       onSessionDeleted?.();
     },
