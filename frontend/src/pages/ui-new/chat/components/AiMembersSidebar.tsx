@@ -8,6 +8,7 @@ import {
 import type { Icon } from '@phosphor-icons/react';
 import {
   PlusIcon,
+  CaretDownIcon,
   UsersThreeIcon,
   UserPlusIcon,
   UserIcon,
@@ -270,6 +271,7 @@ export function AiMembersSidebar({
   const { t } = useTranslation('chat');
   const { t: tCommon } = useTranslation('common');
   const [activeTab, setActiveTab] = useState<AddMemberTab>('preset');
+  const [isTeamPresetsExpanded, setIsTeamPresetsExpanded] = useState(true);
   const [importPromptEditorIndex, setImportPromptEditorIndex] = useState<
     number | null
   >(null);
@@ -338,30 +340,59 @@ export function AiMembersSidebar({
       )}
       {enabledTeamPresets.length > 0 && (
         <div>
-          <div className="flex items-center gap-1 text-xs text-low mb-1 mt-half">
-            <UsersThreeIcon className="size-3" />
-            <span>{t('members.presetTeamSection')}</span>
+          <div className="flex items-center justify-between gap-1 text-xs text-low mb-1 mt-half">
+            <div className="flex items-center gap-1">
+              <UsersThreeIcon className="size-3" />
+              <span>{t('members.presetTeamSection')}</span>
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-xs p-0.5 text-low hover:text-normal hover:bg-secondary/50 transition-colors"
+              onClick={() =>
+                setIsTeamPresetsExpanded((expanded) => !expanded)
+              }
+              aria-label={
+                isTeamPresetsExpanded
+                  ? t('sidebar.collapseSidebar')
+                  : t('sidebar.expandSidebar')
+              }
+              title={
+                isTeamPresetsExpanded
+                  ? t('sidebar.collapseSidebar')
+                  : t('sidebar.expandSidebar')
+              }
+            >
+              <CaretDownIcon
+                className={cn(
+                  'size-3 transition-transform',
+                  !isTeamPresetsExpanded && '-rotate-90'
+                )}
+                weight="bold"
+              />
+            </button>
           </div>
-          <div className="space-y-0.5 max-h-40 overflow-y-auto">
-            {enabledTeamPresets.map((team) => {
-              const TeamIcon = getTeamIcon(team.id);
-              return (
-                <button
-                  key={team.id}
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-sm border border-border px-2 py-1 text-left text-xs hover:bg-secondary/50"
-                  onClick={() => onImportTeamPreset(team)}
-                  disabled={!!teamImportPlan}
-                >
-                  <TeamIcon className="size-3.5 shrink-0 text-low" />
-                  <span className="font-medium text-normal truncate">
-                    {getLocalizedTeamPresetName(team, t)}
-                  </span>
-                  <UsersThreeIcon className="size-3 shrink-0 text-low ml-auto" />
-                </button>
-              );
-            })}
-          </div>
+          {isTeamPresetsExpanded && (
+            <div className="space-y-0.5 max-h-40 overflow-y-auto">
+              {enabledTeamPresets.map((team) => {
+                const TeamIcon = getTeamIcon(team.id);
+                return (
+                  <button
+                    key={team.id}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-sm border border-border px-2 py-1 text-left text-xs hover:bg-secondary/50"
+                    onClick={() => onImportTeamPreset(team)}
+                    disabled={!!teamImportPlan}
+                  >
+                    <TeamIcon className="size-3.5 shrink-0 text-low" />
+                    <span className="font-medium text-normal truncate">
+                      {getLocalizedTeamPresetName(team, t)}
+                    </span>
+                    <UsersThreeIcon className="size-3 shrink-0 text-low ml-auto" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
