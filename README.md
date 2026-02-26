@@ -30,15 +30,29 @@
 <!-- 🔴 最高优先级：把这里换成动态 GIF，展示多 Agent 并行工作的聊天画面 -->
 ![AgentsChatGroup Demo](docs/images/demo.gif)
 
-> **Claude Code writes code → automatically @mentions Gemini CLI for review → review results feed back to the group — all without you lifting a finger.**
+Task: Build an open-source project homepage from GitHub content.
+
+```text
+[User Task]
+   |
+   +--> UI Designer: draft visual UI
+   |        |
+   |        +--> @Full-Stack Engineer: implement
+   |
+   +--> QA Tester: write test plan (parallel)
+            |
+            +--> run tests after implementation
+                     |
+                     +--> issue found -> @Full-Stack fix -> re-test -> pass
+```
 
 ---
 
 ## The Problem
 
-You're probably using Claude Code, Gemini CLI, and Codex every day. But you've hit these walls:
+I'm using Claude Code, Gemini CLI, and Codex every day. But I've hit these walls:
 
-- **You're the middleman.** You copy outputs from one agent and paste them into another, manually.
+- **I'm the middleman.** I copy outputs from one agent and paste them into another, manually.
 - **No parallelism.** Tasks queue up. One agent finishes, then the next one starts.
 - **Lost context.** Every new agent conversation starts from zero.
 - **Context switching kills flow.** Jumping between 4 chat windows is exhausting.
@@ -198,7 +212,7 @@ pnpm i
 ```powershell
 $env:FRONTEND_PORT = node scripts/setup-dev-environment.js frontend
 $env:BACKEND_PORT = node scripts/setup-dev-environment.js backend
-$env:VK_ALLOWED_ORIGINS = "http://localhost:$env:FRONTEND_PORT"
+$env:RUST_LOG = "debug"
 cargo run --bin server
 ```
 
@@ -206,6 +220,7 @@ cargo run --bin server
 
 ```powershell
 $env:FRONTEND_PORT = node scripts/setup-dev-environment.js frontend
+$env:BACKEND_PORT = <backend port>
 cd frontend
 pnpm dev -- --port $env:FRONTEND_PORT --host
 ```

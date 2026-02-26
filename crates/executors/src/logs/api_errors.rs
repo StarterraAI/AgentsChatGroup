@@ -193,7 +193,7 @@ pub fn detect_api_error(content: &str) -> Option<DetectedApiError> {
                 error_type: NormalizedEntryError::QuotaExceeded {
                     provider: Some("DeepSeek".to_string()),
                 },
-                message: "DeepSeek 额度已用尽".to_string(),
+                message: "DeepSeek quota or credit limit reached".to_string(),
             });
         }
         if lowered.contains("rate limit") || lowered.contains("429") {
@@ -201,7 +201,7 @@ pub fn detect_api_error(content: &str) -> Option<DetectedApiError> {
                 error_type: NormalizedEntryError::RateLimitExceeded {
                     provider: Some("DeepSeek".to_string()),
                 },
-                message: "DeepSeek API 请求频率超限".to_string(),
+                message: "DeepSeek API rate limit exceeded".to_string(),
             });
         }
     }

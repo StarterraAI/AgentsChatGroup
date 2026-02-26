@@ -5,6 +5,7 @@ import {
   ActionType,
   NormalizedEntry,
   ToolStatus,
+  type NormalizedEntryError,
   type NormalizedEntryType,
   type TaskWithAttemptStatus,
   type JsonValue,
@@ -172,6 +173,11 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) =>
   entryType.type === 'thinking' ||
   entryType.type === 'tool_use';
 
+const isWarningEntryError = (errorType: NormalizedEntryError['type']) =>
+  errorType === 'quota_exceeded' ||
+  errorType === 'rate_limit_exceeded' ||
+  errorType === 'context_limit_exceeded';
+
 const getContentClassName = (entryType: NormalizedEntryType) => {
   const base = ' whitespace-pre-wrap break-words';
   if (
@@ -181,8 +187,11 @@ const getContentClassName = (entryType: NormalizedEntryType) => {
     return `${base} font-mono`;
 
   // Keep content-only styling — no bg/padding/rounded here.
-  if (entryType.type === 'error_message')
-    return `${base} font-mono text-destructive`;
+  if (entryType.type === 'error_message') {
+    return isWarningEntryError(entryType.error_type.type)
+      ? `${base} font-mono text-warning`
+      : `${base} font-mono text-destructive`;
+  }
 
   if (entryType.type === 'thinking') return `${base} opacity-60`;
 
@@ -209,7 +218,7 @@ const getContentClassName = (entryType: NormalizedEntryType) => {
  * Unified card      *
  *********************/
 
-type CardVariant = 'system' | 'error';
+type CardVariant = 'system' | 'warning' | 'error';
 
 const MessageCard: React.FC<{
   children: React.ReactNode;
@@ -220,13 +229,19 @@ const MessageCard: React.FC<{
   const frameBase =
     'border px-3 py-2 w-full cursor-pointer  bg-[hsl(var(--card))] border-[hsl(var(--border))]';
   const systemTheme = 'border-400/40 text-zinc-500';
+  const warningTheme =
+    'border-warning/40 bg-warning/10 text-[hsl(var(--foreground))]';
   const errorTheme =
     'border-red-400/40 bg-red-50 dark:bg-[hsl(var(--card))] text-[hsl(var(--foreground))]';
 
   return (
     <div
       className={`${frameBase} ${
-        variant === 'system' ? systemTheme : errorTheme
+        variant === 'system'
+          ? systemTheme
+          : variant === 'warning'
+            ? warningTheme
+            : errorTheme
       }`}
       onClick={onToggle}
     >
@@ -248,7 +263,7 @@ const MessageCard: React.FC<{
  * Collapsible container *
  ************************/
 
-type CollapsibleVariant = 'system' | 'error';
+type CollapsibleVariant = 'system' | 'warning' | 'error';
 
 const ExpandChevron: React.FC<{
   expanded: boolean;
@@ -258,7 +273,9 @@ const ExpandChevron: React.FC<{
   const color =
     variant === 'system'
       ? 'text-700 dark:text-300'
-      : 'text-red-700 dark:text-red-300';
+      : variant === 'warning'
+        ? 'text-warning'
+        : 'text-red-700 dark:text-red-300';
 
   return (
     <ChevronDown
@@ -688,6 +705,23 @@ const getToolStatusAppearance = (status: ToolStatus): ToolStatusAppearance => {
   return 'default';
 };
 
+const getCollapsibleVariant = (
+  entryType: NormalizedEntryType
+): CollapsibleVariant => {
+  if (entryType.type === 'system_message') {
+    return 'system';
+  }
+
+  if (
+    entryType.type === 'error_message' &&
+    isWarningEntryError(entryType.error_type.type)
+  ) {
+    return 'warning';
+  }
+
+  return 'error';
+};
+
 /*******************
  * Main component  *
  *******************/
@@ -893,7 +927,7 @@ function DisplayConversationEntry({
           content={isNormalizedEntry(entry) ? entry.content : ''}
           markdown={shouldRenderMarkdown(entryType)}
           expansionKey={expansionKey}
-          variant={isSystem ? 'system' : 'error'}
+          variant={getCollapsibleVariant(entryType)}
           contentClassName={getContentClassName(entryType)}
           taskAttemptId={taskAttempt?.id}
         />

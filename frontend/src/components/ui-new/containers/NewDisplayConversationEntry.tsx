@@ -7,6 +7,7 @@ import {
   ToolStatus,
   ToolResult,
   TodoItem,
+  type NormalizedEntryError,
   type RepoWithTargetBranch,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
@@ -59,6 +60,14 @@ type Props = {
 };
 
 type FileEditAction = Extract<ActionType, { action: 'file_edit' }>;
+
+function isWarningEntryError(type: NormalizedEntryError['type']): boolean {
+  return (
+    type === 'quota_exceeded' ||
+    type === 'rate_limit_exceeded' ||
+    type === 'context_limit_exceeded'
+  );
+}
 
 /**
  * Generate tool summary text from action type
@@ -329,6 +338,7 @@ function NewDisplayConversationEntry(props: Props) {
         <ErrorMessageEntry
           content={entry.content}
           expansionKey={expansionKey}
+          errorType={entryType.error_type}
         />
       );
 
@@ -776,17 +786,25 @@ function ScriptEntryWithFix({
 function ErrorMessageEntry({
   content,
   expansionKey,
+  errorType,
 }: {
   content: string;
   expansionKey: string;
+  errorType: NormalizedEntryError;
 }) {
   const [expanded, toggle] = usePersistedExpanded(
     `error:${expansionKey}`,
     false
   );
+  const tone = isWarningEntryError(errorType.type) ? 'warning' : 'error';
 
   return (
-    <ChatErrorMessage content={content} expanded={expanded} onToggle={toggle} />
+    <ChatErrorMessage
+      content={content}
+      expanded={expanded}
+      onToggle={toggle}
+      tone={tone}
+    />
   );
 }
 

@@ -1,4 +1,4 @@
-import { WarningCircleIcon } from '@phosphor-icons/react';
+import { WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 
 interface ChatErrorMessageProps {
@@ -6,6 +6,7 @@ interface ChatErrorMessageProps {
   className?: string;
   expanded?: boolean;
   onToggle?: () => void;
+  tone?: 'error' | 'warning';
 }
 
 export function ChatErrorMessage({
@@ -13,17 +14,22 @@ export function ChatErrorMessage({
   className,
   expanded,
   onToggle,
+  tone = 'error',
 }: ChatErrorMessageProps) {
+  const isWarning = tone === 'warning';
+  const Icon = isWarning ? WarningCircleIcon : XCircleIcon;
+
   return (
     <div
       className={cn(
-        'flex items-start gap-base text-sm text-error cursor-pointer',
+        'flex items-start gap-base text-sm cursor-pointer',
+        isWarning ? 'text-warning' : 'text-error',
         className
       )}
       onClick={onToggle}
       role="button"
     >
-      <WarningCircleIcon className="shrink-0 size-icon-base mt-0.5" />
+      <Icon className="shrink-0 size-icon-base mt-0.5" />
       <span
         className={cn(
           !expanded && 'truncate',

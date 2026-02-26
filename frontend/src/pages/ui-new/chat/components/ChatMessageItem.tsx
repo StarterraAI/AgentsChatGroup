@@ -1,6 +1,7 @@
 import {
   CheckCircleIcon,
   XCircleIcon,
+  WarningCircleIcon,
   PaperPlaneTiltIcon,
   CheckSquareIcon,
   SquareIcon,
@@ -294,14 +295,36 @@ export function ChatMessageItem({
               const apiError = isAgent
                 ? detectApiError(message.content)
                 : null;
+              const isWarningApiError =
+                apiError?.type === 'quota_exceeded' ||
+                apiError?.type === 'rate_limit' ||
+                apiError?.type === 'context_limit';
               return apiError ? (
-                <div className="mb-half flex items-center gap-half rounded-sm bg-error/10 border border-error/30 px-base py-half text-xs text-error">
-                  <XCircleIcon
-                    className="size-icon-sm flex-shrink-0"
-                    weight="fill"
-                  />
+                <div
+                  className={cn(
+                    'mb-half flex items-center gap-half rounded-sm border px-base py-half text-xs',
+                    isWarningApiError
+                      ? 'bg-warning/10 border-warning/30 text-warning'
+                      : 'bg-error/10 border-error/30 text-error'
+                  )}
+                >
+                  {isWarningApiError ? (
+                    <WarningCircleIcon
+                      className="size-icon-sm flex-shrink-0"
+                      weight="fill"
+                    />
+                  ) : (
+                    <XCircleIcon
+                      className="size-icon-sm flex-shrink-0"
+                      weight="fill"
+                    />
+                  )}
                   <span className="font-medium">{apiError.message}</span>
-                  <span className="text-error/70">
+                  <span
+                    className={
+                      isWarningApiError ? 'text-warning/70' : 'text-error/70'
+                    }
+                  >
                     - {t('message.apiError.checkQuota')}
                   </span>
                 </div>
