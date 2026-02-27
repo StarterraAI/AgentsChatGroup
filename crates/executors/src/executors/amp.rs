@@ -40,7 +40,7 @@ pub struct Amp {
 
 impl Amp {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let mut builder = CommandBuilder::new("npx -y @sourcegraph/amp@0.0.1764777697-g907e30")
+        let mut builder = CommandBuilder::new("npx -y @sourcegraph/amp@latest")
             .params(["--execute", "--stream-json"]);
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--mode", model]);

@@ -56,7 +56,7 @@ pub struct Copilot {
 
 impl Copilot {
     fn build_command_builder(&self, log_dir: &str) -> Result<CommandBuilder, CommandBuildError> {
-        let mut builder = CommandBuilder::new("npx -y @github/copilot@0.0.375").params([
+        let mut builder = CommandBuilder::new("npx -y @github/copilot@latest").params([
             "--no-color",
             "--log-level",
             "debug",

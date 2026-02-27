@@ -37,7 +37,7 @@ pub struct QwenCode {
 
 impl QwenCode {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let mut builder = CommandBuilder::new("npx -y @qwen-code/qwen-code@0.10.5");
+        let mut builder = CommandBuilder::new("npx -y @qwen-code/qwen-code@latest");
 
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--model", model.as_str()]);
