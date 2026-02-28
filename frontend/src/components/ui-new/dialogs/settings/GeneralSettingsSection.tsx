@@ -7,9 +7,6 @@ import {
 } from '@phosphor-icons/react';
 import {
   type BaseCodingAgent,
-  DEFAULT_COMMIT_REMINDER_PROMPT,
-  DEFAULT_PR_DESCRIPTION_PROMPT,
-  EditorType,
   type ExecutorProfileId,
   type SendMessageShortcut,
   SoundFile,
@@ -21,7 +18,6 @@ import { getLanguageOptions } from '@/i18n/languages';
 import { toPrettyCase } from '@/utils/string';
 import { useTheme } from '@/components/ThemeProvider';
 import { useUserSystem } from '@/components/ConfigProvider';
-import { TagManager } from '@/components/TagManager';
 import { cn } from '@/lib/utils';
 import { PrimaryButton } from '../../primitives/PrimaryButton';
 import { IconButton } from '../../primitives/IconButton';
@@ -36,11 +32,9 @@ import {
   SettingsCard,
   SettingsCheckbox,
   SettingsField,
-  SettingsInput,
   SettingsNumberInput,
   SettingsSaveBar,
   SettingsSelect,
-  SettingsTextarea,
 } from './SettingsComponents';
 import { useSettingsDirty } from './SettingsDirtyContext';
 
@@ -212,11 +206,6 @@ export function GeneralSettingsSection() {
       label: toPrettyCase(theme),
     }));
 
-  const editorOptions = Object.values(EditorType).map((editor) => ({
-    value: editor,
-    label: toPrettyCase(editor),
-  }));
-
   const soundOptions = Object.values(SoundFile).map((sound) => ({
     value: sound,
     label: toPrettyCase(sound),
@@ -267,100 +256,6 @@ export function GeneralSettingsSection() {
             placeholder={t('settings.general.appearance.language.placeholder')}
           />
         </SettingsField>
-      </SettingsCard>
-
-      {/* Editor */}
-      <SettingsCard
-        title={t('settings.general.editor.title')}
-        description={t('settings.general.editor.description')}
-      >
-        <SettingsField
-          label={t('settings.general.editor.type.label')}
-          description={t('settings.general.editor.type.helper')}
-        >
-          <SettingsSelect
-            value={draft?.editor.editor_type}
-            options={editorOptions}
-            onChange={(value: EditorType) =>
-              updateDraft({
-                editor: { ...draft!.editor, editor_type: value },
-              })
-            }
-            placeholder={t('settings.general.editor.type.placeholder')}
-          />
-        </SettingsField>
-
-        {draft?.editor.editor_type === EditorType.CUSTOM && (
-          <SettingsField
-            label={t('settings.general.editor.customCommand.label')}
-            description={t('settings.general.editor.customCommand.helper')}
-          >
-            <SettingsInput
-              value={draft?.editor.custom_command || ''}
-              onChange={(value) =>
-                updateDraft({
-                  editor: {
-                    ...draft!.editor,
-                    custom_command: value || null,
-                  },
-                })
-              }
-              placeholder={t(
-                'settings.general.editor.customCommand.placeholder'
-              )}
-            />
-          </SettingsField>
-        )}
-
-        {(draft?.editor.editor_type === EditorType.VS_CODE ||
-          draft?.editor.editor_type === EditorType.CURSOR ||
-          draft?.editor.editor_type === EditorType.WINDSURF ||
-          draft?.editor.editor_type === EditorType.GOOGLE_ANTIGRAVITY ||
-          draft?.editor.editor_type === EditorType.ZED) && (
-          <>
-            <SettingsField
-              label={t('settings.general.editor.remoteSsh.host.label')}
-              description={t('settings.general.editor.remoteSsh.host.helper')}
-            >
-              <SettingsInput
-                value={draft?.editor.remote_ssh_host || ''}
-                onChange={(value) =>
-                  updateDraft({
-                    editor: {
-                      ...draft!.editor,
-                      remote_ssh_host: value || null,
-                    },
-                  })
-                }
-                placeholder={t(
-                  'settings.general.editor.remoteSsh.host.placeholder'
-                )}
-              />
-            </SettingsField>
-
-            {draft?.editor.remote_ssh_host && (
-              <SettingsField
-                label={t('settings.general.editor.remoteSsh.user.label')}
-                description={t('settings.general.editor.remoteSsh.user.helper')}
-              >
-                <SettingsInput
-                  value={draft?.editor.remote_ssh_user || ''}
-                  onChange={(value) =>
-                    updateDraft({
-                      editor: {
-                        ...draft!.editor,
-                        remote_ssh_user: value || null,
-                      },
-                    })
-                  }
-                  placeholder={t(
-                    'settings.general.editor.remoteSsh.user.placeholder'
-                  )}
-                />
-              </SettingsField>
-            )}
-          </>
-        )}
       </SettingsCard>
 
       {/* Default Coding Agent */}
@@ -455,105 +350,6 @@ export function GeneralSettingsSection() {
             ) : null}
           </div>
         </SettingsField>
-      </SettingsCard>
-
-      {/* Pull Requests */}
-      <SettingsCard
-        title={t('settings.general.pullRequests.title')}
-        description={t('settings.general.pullRequests.description')}
-      >
-        <SettingsCheckbox
-          id="pr-auto-description"
-          label={t('settings.general.pullRequests.autoDescription.label')}
-          description={t(
-            'settings.general.pullRequests.autoDescription.helper'
-          )}
-          checked={draft?.pr_auto_description_enabled ?? false}
-          onChange={(checked) =>
-            updateDraft({ pr_auto_description_enabled: checked })
-          }
-        />
-
-        <SettingsCheckbox
-          id="use-custom-prompt"
-          label={t('settings.general.pullRequests.customPrompt.useCustom')}
-          checked={draft?.pr_auto_description_prompt != null}
-          onChange={(checked) => {
-            if (checked) {
-              updateDraft({
-                pr_auto_description_prompt: DEFAULT_PR_DESCRIPTION_PROMPT,
-              });
-            } else {
-              updateDraft({ pr_auto_description_prompt: null });
-            }
-          }}
-        />
-
-        <SettingsField
-          label=""
-          description={t('settings.general.pullRequests.customPrompt.helper')}
-        >
-          <SettingsTextarea
-            value={
-              draft?.pr_auto_description_prompt ?? DEFAULT_PR_DESCRIPTION_PROMPT
-            }
-            onChange={(value) =>
-              updateDraft({ pr_auto_description_prompt: value })
-            }
-            disabled={draft?.pr_auto_description_prompt == null}
-          />
-        </SettingsField>
-      </SettingsCard>
-
-      {/* Commits */}
-      <SettingsCard
-        title={t('settings.general.commits.title')}
-        description={t('settings.general.commits.description')}
-      >
-        <SettingsCheckbox
-          id="commit-reminder"
-          label={t('settings.general.commits.reminder.label')}
-          description={t('settings.general.commits.reminder.helper')}
-          checked={draft?.commit_reminder_enabled ?? true}
-          onChange={(checked) =>
-            updateDraft({ commit_reminder_enabled: checked })
-          }
-        />
-
-        {draft?.commit_reminder_enabled && (
-          <>
-            <SettingsCheckbox
-              id="use-custom-commit-prompt"
-              label={t('settings.general.commits.customPrompt.useCustom')}
-              checked={draft?.commit_reminder_prompt != null}
-              onChange={(checked) => {
-                if (checked) {
-                  updateDraft({
-                    commit_reminder_prompt: DEFAULT_COMMIT_REMINDER_PROMPT,
-                  });
-                } else {
-                  updateDraft({ commit_reminder_prompt: null });
-                }
-              }}
-            />
-
-            <SettingsField
-              label=""
-              description={t('settings.general.commits.customPrompt.helper')}
-            >
-              <SettingsTextarea
-                value={
-                  draft?.commit_reminder_prompt ??
-                  DEFAULT_COMMIT_REMINDER_PROMPT
-                }
-                onChange={(value) =>
-                  updateDraft({ commit_reminder_prompt: value })
-                }
-                disabled={draft?.commit_reminder_prompt == null}
-              />
-            </SettingsField>
-          </>
-        )}
       </SettingsCard>
 
       {/* Notifications */}
@@ -659,65 +455,6 @@ export function GeneralSettingsSection() {
         </SettingsField>
       </SettingsCard>
 
-      {/* Privacy */}
-      <SettingsCard
-        title={t('settings.general.privacy.title')}
-        description={t('settings.general.privacy.description')}
-      >
-        <SettingsCheckbox
-          id="analytics-enabled"
-          label={t('settings.general.privacy.telemetry.label')}
-          description={t('settings.general.privacy.telemetry.helper')}
-          checked={draft?.analytics_enabled ?? false}
-          onChange={(checked) => updateDraft({ analytics_enabled: checked })}
-        />
-      </SettingsCard>
-
-      {/* Task Templates */}
-      <SettingsCard
-        title={t('settings.general.taskTemplates.title')}
-        description={t('settings.general.taskTemplates.description')}
-      >
-        <TagManager />
-      </SettingsCard>
-
-      {/* Safety */}
-      <SettingsCard
-        title={t('settings.general.safety.title')}
-        description={t('settings.general.safety.description')}
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-normal">
-              {t('settings.general.safety.disclaimer.title')}
-            </p>
-            <p className="text-sm text-low">
-              {t('settings.general.safety.disclaimer.description')}
-            </p>
-          </div>
-          <PrimaryButton
-            variant="tertiary"
-            value={t('settings.general.safety.disclaimer.button')}
-            onClick={resetDisclaimer}
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-normal">
-              {t('settings.general.safety.onboarding.title')}
-            </p>
-            <p className="text-sm text-low">
-              {t('settings.general.safety.onboarding.description')}
-            </p>
-          </div>
-          <PrimaryButton
-            variant="tertiary"
-            value={t('settings.general.safety.onboarding.button')}
-            onClick={resetOnboarding}
-          />
-        </div>
-      </SettingsCard>
-
       {/* Chat Compression */}
       <SettingsCard
         title={t('settings.general.chatCompression.title')}
@@ -765,18 +502,41 @@ export function GeneralSettingsSection() {
         </SettingsField>
       </SettingsCard>
 
-      {/* Beta Features */}
+      {/* Safety */}
       <SettingsCard
-        title={t('settings.general.beta.title')}
-        description={t('settings.general.beta.description')}
+        title={t('settings.general.safety.title')}
+        description={t('settings.general.safety.description')}
       >
-        <SettingsCheckbox
-          id="beta-workspaces"
-          label={t('settings.general.beta.workspaces.label')}
-          description={t('settings.general.beta.workspaces.helper')}
-          checked={draft?.beta_workspaces ?? false}
-          onChange={(checked) => updateDraft({ beta_workspaces: checked })}
-        />
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-normal">
+              {t('settings.general.safety.disclaimer.title')}
+            </p>
+            <p className="text-sm text-low">
+              {t('settings.general.safety.disclaimer.description')}
+            </p>
+          </div>
+          <PrimaryButton
+            variant="tertiary"
+            value={t('settings.general.safety.disclaimer.button')}
+            onClick={resetDisclaimer}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-normal">
+              {t('settings.general.safety.onboarding.title')}
+            </p>
+            <p className="text-sm text-low">
+              {t('settings.general.safety.onboarding.description')}
+            </p>
+          </div>
+          <PrimaryButton
+            variant="tertiary"
+            value={t('settings.general.safety.onboarding.button')}
+            onClick={resetOnboarding}
+          />
+        </div>
       </SettingsCard>
 
       <SettingsSaveBar
