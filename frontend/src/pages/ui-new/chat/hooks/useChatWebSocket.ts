@@ -48,6 +48,32 @@ const INACTIVE_RUN_PRUNE_GRACE_MS = 15 * 1000;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
+const extractCompressionWarningFromMeta = (
+  meta: unknown
+): CompressionWarning | null => {
+  if (!isRecord(meta)) return null;
+  const rawWarning = meta.compression_warning;
+  if (!isRecord(rawWarning)) return null;
+
+  const code = rawWarning.code;
+  const message = rawWarning.message;
+  const splitFilePath = rawWarning.split_file_path;
+
+  if (
+    typeof code !== 'string' ||
+    typeof message !== 'string' ||
+    typeof splitFilePath !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    code,
+    message,
+    split_file_path: splitFilePath,
+  };
+};
+
 function pruneExpiredStreamingRuns(
   runsBySession: StreamingRunsBySession,
   nowMs: number = Date.now()
@@ -310,6 +336,10 @@ export function useChatWebSocket(
 
   const handleMessageNew = useCallback(
     (message: ChatMessage) => {
+      const metaWarning = extractCompressionWarningFromMeta(message.meta);
+      if (metaWarning) {
+        setCompressionWarning(metaWarning);
+      }
       onMessageReceived(message);
       const runId = extractRunId(message.meta);
       const sessionId = message.session_id;

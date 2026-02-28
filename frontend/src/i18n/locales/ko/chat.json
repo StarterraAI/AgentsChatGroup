@@ -31,6 +31,9 @@
   },
   "input": {
     "mentionAgents": "에이전트 멘션",
+    "mentionAllOption": "모든 멤버 (@all)",
+    "mentionAllSuggestion": "@모든 멤버",
+    "mentionAllBadge": "@all",
     "routeToAgents": "에이전트로 라우팅",
     "replyingTo": "{{name}}에게 답장",
     "referencedMessage": "참조된 메시지",

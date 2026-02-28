@@ -1043,6 +1043,12 @@
     color: var(--chat-session-text-primary);
   }
 
+  .new-design .chat-session-message-body a {
+    color: var(--chat-session-brand);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
   .new-design .chat-session-message-meta {
     color: var(--chat-session-text-secondary);
   }

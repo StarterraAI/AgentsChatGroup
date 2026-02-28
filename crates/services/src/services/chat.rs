@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::DefaultHasher},
+    hash::Hasher,
     path::Path,
     str::FromStr,
     sync::Arc,
@@ -7,6 +8,7 @@ use std::{
 };
 
 use chrono::Utc;
+use dashmap::DashMap;
 use db::models::{
     chat_agent::ChatAgent,
     chat_message::{ChatMessage, ChatSenderType, CreateChatMessage},
@@ -16,14 +18,18 @@ use db::models::{
 use executors::{
     approvals::NoopExecutorApprovalService,
     env::{ExecutionEnv, RepoContext},
-    executors::{BaseCodingAgent, ExecutorError, ExecutorExitResult, StandardCodingAgentExecutor},
+    executors::{
+        BaseCodingAgent, ExecutorError, ExecutorExitResult, SpawnedChild,
+        StandardCodingAgentExecutor,
+    },
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
     profile::{ExecutorConfigs, ExecutorProfileId, canonical_variant_key},
 };
 use futures::StreamExt;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 use tokio::{fs, io::AsyncWriteExt};
 use tokio_util::io::ReaderStream;
@@ -51,9 +57,25 @@ pub const DEFAULT_TOKEN_THRESHOLD: u32 = 10_000_000;
 pub const DEFAULT_COMPRESSION_PERCENTAGE: u8 = 25;
 const SUMMARY_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);
 const SUMMARY_DRAIN_TIMEOUT: Duration = Duration::from_millis(350);
-const SUMMARY_IDLE_AGENT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
-const SUMMARY_IDLE_AGENT_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const SUMMARY_REAP_TIMEOUT: Duration = Duration::from_secs(3);
+const SUMMARY_KILL_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
+const SUMMARY_INPUT_TOKEN_LIMIT: u32 = 60_000;
 const EXECUTOR_PROFILE_VARIANT_KEY: &str = "executor_profile_variant";
+
+#[derive(Clone)]
+struct CompressionCacheEntry {
+    source_fingerprint: u64,
+    source_message_count: usize,
+    token_threshold: u32,
+    compression_percentage: u8,
+    source_token_count: u32,
+    effective_token_count: u32,
+    result: CompressionResult,
+}
+
+static COMPRESSION_RESULT_CACHE: Lazy<DashMap<Uuid, CompressionCacheEntry>> =
+    Lazy::new(DashMap::new);
+const COMPRESSION_STATE_TABLE: &str = "chat_session_compression_states";
 
 /// Result of the message compression process
 #[derive(Debug, Clone)]
@@ -158,6 +180,53 @@ pub fn parse_mentions(content: &str) -> Vec<String> {
     mentions
 }
 
+pub fn parse_send_message_directives(content: &str) -> Vec<String> {
+    const PREFIX: &str = "[sendMessageTo@@";
+
+    let mut mentions = Vec::new();
+    let mut seen = HashSet::new();
+    let mut cursor = 0usize;
+
+    while cursor < content.len() {
+        let Some(prefix_rel) = content[cursor..].find(PREFIX) else {
+            break;
+        };
+        let mut name_start = cursor + prefix_rel + PREFIX.len();
+
+        let (name_end, next_cursor) = if content[name_start..].starts_with('{') {
+            name_start += 1;
+            let Some(suffix_rel) = content[name_start..].find("}]") else {
+                cursor = name_start;
+                continue;
+            };
+            let name_end = name_start + suffix_rel;
+            (name_end, name_end + 2)
+        } else {
+            let Some(suffix_rel) = content[name_start..].find(']') else {
+                cursor = name_start;
+                continue;
+            };
+            let name_end = name_start + suffix_rel;
+            (name_end, name_end + 1)
+        };
+
+        let name = content[name_start..name_end].trim();
+
+        if !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            && seen.insert(name.to_string())
+        {
+            mentions.push(name.to_string());
+        }
+
+        cursor = next_cursor;
+    }
+
+    mentions
+}
+
 pub async fn create_message(
     pool: &SqlitePool,
     session_id: Uuid,
@@ -201,7 +270,10 @@ pub async fn create_message_with_id(
         return Err(ChatServiceError::SessionArchived);
     }
 
-    let mentions = parse_mentions(&content);
+    let mentions = match sender_type {
+        ChatSenderType::Agent => parse_send_message_directives(&content),
+        _ => parse_mentions(&content),
+    };
     let mut meta = meta.unwrap_or_else(|| serde_json::json!({}));
     if !meta.is_object() {
         meta = serde_json::json!({ "raw_meta": meta });
@@ -349,13 +421,57 @@ async fn load_chat_compression_settings() -> (u32, u8) {
 
 fn simplified_to_context_value(message: &SimplifiedMessage) -> Value {
     let time = chrono::DateTime::parse_from_rfc3339(&message.timestamp)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_else(|_| message.timestamp.clone());
 
     serde_json::json!({
         "sender": message.sender,
         "content": message.content,
         "time": time,
+    })
+}
+
+fn simplified_messages_to_jsonl(messages: &[SimplifiedMessage]) -> (Vec<Value>, String) {
+    let context_messages: Vec<Value> = messages.iter().map(simplified_to_context_value).collect();
+    let jsonl = context_messages
+        .iter()
+        .filter_map(|msg| serde_json::to_string(msg).ok())
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    (context_messages, jsonl)
+}
+
+/// Build full (uncompressed) context.
+///
+/// This is used by the non-blocking main execution path so agent runs are never
+/// delayed by summarization/compression.
+pub async fn build_full_context(
+    pool: &SqlitePool,
+    session_id: Uuid,
+) -> Result<CompactedContext, ChatServiceError> {
+    let all_messages = ChatMessage::find_by_session_id(pool, session_id, None).await?;
+    let agents = ChatAgent::find_all(pool).await?;
+    let agent_map: HashMap<Uuid, String> = agents
+        .into_iter()
+        .map(|agent| (agent.id, agent.name))
+        .collect();
+
+    let simplified_messages: Vec<SimplifiedMessage> = all_messages
+        .iter()
+        .map(|message| to_simplified_message(message, &agent_map))
+        .collect();
+
+    let (messages, jsonl) = simplified_messages_to_jsonl(&simplified_messages);
+    Ok(CompactedContext {
+        messages,
+        jsonl,
+        context_compacted: false,
+        compression_warning: None,
     })
 }
 
@@ -405,17 +521,7 @@ pub async fn build_compacted_context(
     )
     .await?;
 
-    let messages: Vec<Value> = compression_result
-        .messages
-        .iter()
-        .map(simplified_to_context_value)
-        .collect();
-    let jsonl = messages
-        .iter()
-        .filter_map(|msg| serde_json::to_string(msg).ok())
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
+    let (messages, jsonl) = simplified_messages_to_jsonl(&compression_result.messages);
 
     Ok(CompactedContext {
         messages,
@@ -518,10 +624,43 @@ Return only the summary body. Do not ask follow-up questions. Do not run any too
     prompt
 }
 
-fn has_idle_agent(session_agents: &[ChatSessionAgent]) -> bool {
-    session_agents
-        .iter()
-        .any(|agent| agent.state == ChatSessionAgentState::Idle)
+fn limit_summary_input_messages(
+    messages_to_compress: &[SimplifiedMessage],
+    token_limit: u32,
+) -> (Vec<SimplifiedMessage>, u32, u32) {
+    let total_tokens = estimate_token_count(messages_to_compress);
+    if messages_to_compress.is_empty() || total_tokens <= token_limit {
+        return (messages_to_compress.to_vec(), total_tokens, total_tokens);
+    }
+
+    // Keep the most recent part of the compressed segment under token budget.
+    let mut selected_rev = Vec::new();
+    let mut selected_tokens = 0u32;
+    for message in messages_to_compress.iter().rev() {
+        let message_tokens = estimate_token_count(std::slice::from_ref(message)).max(1);
+        if !selected_rev.is_empty() && selected_tokens.saturating_add(message_tokens) > token_limit
+        {
+            break;
+        }
+        selected_rev.push(message.clone());
+        selected_tokens = selected_tokens.saturating_add(message_tokens);
+        if selected_tokens >= token_limit {
+            break;
+        }
+    }
+
+    if selected_rev.is_empty() {
+        selected_rev.push(
+            messages_to_compress
+                .last()
+                .expect("messages_to_compress must be non-empty")
+                .clone(),
+        );
+        selected_tokens = estimate_token_count(&selected_rev);
+    }
+
+    selected_rev.reverse();
+    (selected_rev, total_tokens, selected_tokens)
 }
 
 fn all_agents_running(session_agents: &[ChatSessionAgent]) -> bool {
@@ -565,37 +704,16 @@ async fn wait_for_idle_agent_if_needed(
         return Ok(session_agents.to_vec());
     }
 
+    // Do not block the active mention execution path.
+    // When all agents are currently running, summarization should quickly fall back
+    // so normal group chat delivery is not stalled.
     tracing::info!(
         session_id = %session_id,
-        wait_timeout_secs = SUMMARY_IDLE_AGENT_WAIT_TIMEOUT.as_secs(),
-        "All session agents are running; waiting for an idle agent for summarization"
+        "All session agents are running; skipping idle wait to avoid blocking chat flow"
     );
-
-    let started_at = tokio::time::Instant::now();
-    let deadline = started_at + SUMMARY_IDLE_AGENT_WAIT_TIMEOUT;
-
-    loop {
-        let refreshed_agents = ChatSessionAgent::find_all_for_session(pool, session_id).await?;
-        if has_idle_agent(&refreshed_agents) {
-            tracing::info!(
-                session_id = %session_id,
-                waited_ms = started_at.elapsed().as_millis() as u64,
-                "Idle agent became available for summarization"
-            );
-            return Ok(refreshed_agents);
-        }
-
-        if tokio::time::Instant::now() >= deadline {
-            tracing::warn!(
-                session_id = %session_id,
-                waited_secs = started_at.elapsed().as_secs(),
-                "Timed out waiting for an idle agent for summarization"
-            );
-            return Ok(refreshed_agents);
-        }
-
-        tokio::time::sleep(SUMMARY_IDLE_AGENT_POLL_INTERVAL).await;
-    }
+    ChatSessionAgent::find_all_for_session(pool, session_id)
+        .await
+        .map_err(ChatServiceError::from)
 }
 
 /// Try to summarize messages using available AI agents
@@ -607,7 +725,20 @@ async fn try_summarize_with_agents(
     messages_to_compress: &[SimplifiedMessage],
     workspace_path: &Path,
 ) -> Option<String> {
-    let summarize_prompt = build_summarization_prompt(messages_to_compress);
+    let (summary_input_messages, input_tokens_before_limit, input_tokens_after_limit) =
+        limit_summary_input_messages(messages_to_compress, SUMMARY_INPUT_TOKEN_LIMIT);
+    if summary_input_messages.len() < messages_to_compress.len() {
+        tracing::warn!(
+            session_id = %session_id,
+            original_messages = messages_to_compress.len(),
+            included_messages = summary_input_messages.len(),
+            original_tokens = input_tokens_before_limit,
+            included_tokens = input_tokens_after_limit,
+            token_limit = SUMMARY_INPUT_TOKEN_LIMIT,
+            "Summarization input exceeded token limit; truncating to most recent messages"
+        );
+    }
+    let summarize_prompt = build_summarization_prompt(&summary_input_messages);
     let candidate_agents =
         match wait_for_idle_agent_if_needed(pool, session_id, session_agents).await {
             Ok(agents) => agents,
@@ -697,42 +828,62 @@ async fn call_agent_for_summary(
     spawn_summary_log_forwarders(&mut spawned.child, msg_store.clone())?;
     executor.normalize_logs(msg_store.clone(), workspace_path);
 
-    let status = match tokio::time::timeout(SUMMARY_EXECUTION_TIMEOUT, spawned.child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(err)) => return Err(ChatServiceError::Io(err)),
-        Err(_) => {
-            if let Some(cancel) = spawned.cancel.take() {
-                cancel.cancel();
-            }
-            let _ = spawned.child.kill().await;
-            return Err(ChatServiceError::Validation(format!(
-                "AI summarization timed out for agent {} after {} seconds",
-                agent.name,
-                SUMMARY_EXECUTION_TIMEOUT.as_secs()
-            )));
-        }
-    };
-
     let mut failed_by_signal = false;
+    let mut status = None;
     if let Some(exit_signal) = spawned.exit_signal.take() {
-        match tokio::time::timeout(Duration::from_millis(250), exit_signal).await {
-            Ok(Ok(ExecutorExitResult::Failure)) => failed_by_signal = true,
+        // Prefer explicit completion signal from executor, then reap child process.
+        match tokio::time::timeout(SUMMARY_EXECUTION_TIMEOUT, exit_signal).await {
             Ok(Ok(ExecutorExitResult::Success)) => {}
+            Ok(Ok(ExecutorExitResult::Failure)) => failed_by_signal = true,
             Ok(Err(err)) => {
-                tracing::debug!(
+                tracing::warn!(
                     agent_name = %agent.name,
                     error = %err,
-                    "Failed to receive summarization exit signal"
+                    "Summarization exit signal dropped; falling back to process wait"
                 );
+                status = Some(wait_for_summary_process_exit(&mut spawned, &agent.name).await?);
             }
-            Err(_) => {}
+            Err(_) => {
+                terminate_summary_child(&mut spawned).await;
+                return Err(ChatServiceError::Validation(format!(
+                    "AI summarization timed out for agent {} after {} seconds",
+                    agent.name,
+                    SUMMARY_EXECUTION_TIMEOUT.as_secs()
+                )));
+            }
         }
+
+        if status.is_none() {
+            match tokio::time::timeout(SUMMARY_REAP_TIMEOUT, spawned.child.wait()).await {
+                Ok(Ok(exit_status)) => status = Some(exit_status),
+                Ok(Err(err)) => return Err(ChatServiceError::Io(err)),
+                Err(_) => {
+                    tracing::debug!(
+                        agent_name = %agent.name,
+                        timeout_ms = SUMMARY_REAP_TIMEOUT.as_millis(),
+                        "Summarization process did not exit after completion signal; forcing shutdown"
+                    );
+                    terminate_summary_child(&mut spawned).await;
+                }
+            }
+        }
+    } else {
+        status = Some(wait_for_summary_process_exit(&mut spawned, &agent.name).await?);
     }
 
     msg_store.push_finished();
     tokio::time::sleep(SUMMARY_DRAIN_TIMEOUT).await;
 
-    if !status.success() || failed_by_signal {
+    if failed_by_signal {
+        return Err(ChatServiceError::Validation(format!(
+            "AI summarization process failed for agent {}",
+            agent.name
+        )));
+    }
+
+    if let Some(exit_status) = status
+        && !exit_status.success()
+    {
         return Err(ChatServiceError::Validation(format!(
             "AI summarization process failed for agent {}",
             agent.name
@@ -745,6 +896,32 @@ async fn call_agent_for_summary(
             agent.name
         ))
     })
+}
+
+async fn wait_for_summary_process_exit(
+    spawned: &mut SpawnedChild,
+    agent_name: &str,
+) -> Result<std::process::ExitStatus, ChatServiceError> {
+    match tokio::time::timeout(SUMMARY_EXECUTION_TIMEOUT, spawned.child.wait()).await {
+        Ok(Ok(status)) => Ok(status),
+        Ok(Err(err)) => Err(ChatServiceError::Io(err)),
+        Err(_) => {
+            terminate_summary_child(spawned).await;
+            Err(ChatServiceError::Validation(format!(
+                "AI summarization timed out for agent {} after {} seconds",
+                agent_name,
+                SUMMARY_EXECUTION_TIMEOUT.as_secs()
+            )))
+        }
+    }
+}
+
+async fn terminate_summary_child(spawned: &mut SpawnedChild) {
+    if let Some(cancel) = spawned.cancel.take() {
+        cancel.cancel();
+    }
+    let _ = spawned.child.kill().await;
+    let _ = tokio::time::timeout(SUMMARY_KILL_WAIT_TIMEOUT, spawned.child.wait()).await;
 }
 
 fn parse_runner_type(agent: &ChatAgent) -> Result<BaseCodingAgent, ChatServiceError> {
@@ -849,13 +1026,368 @@ fn extract_latest_assistant_from_history(history: &[LogMsg]) -> Option<String> {
         .filter(|content| !content.is_empty())
 }
 
+fn select_messages_to_compress_by_token(
+    messages: &[SimplifiedMessage],
+    total_tokens: u32,
+    compression_percentage: u8,
+) -> (usize, u32, u32) {
+    if messages.is_empty() {
+        return (0, 0, 0);
+    }
+
+    let target_tokens = ((total_tokens as u64) * (compression_percentage as u64)).div_ceil(100);
+    let target_tokens = (target_tokens as u32).max(1);
+
+    let mut selected_tokens = 0u32;
+    let mut selected_count = 0usize;
+
+    for message in messages {
+        // Use per-message token estimates so we can choose a prefix by token budget.
+        let message_tokens = estimate_token_count(std::slice::from_ref(message)).max(1);
+        selected_tokens = selected_tokens.saturating_add(message_tokens);
+        selected_count += 1;
+        if selected_tokens >= target_tokens {
+            break;
+        }
+    }
+
+    (
+        selected_count.max(1).min(messages.len()),
+        target_tokens,
+        selected_tokens,
+    )
+}
+
+fn calculate_messages_fingerprint(messages: &[SimplifiedMessage]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for message in messages {
+        hasher.write(message.sender.as_bytes());
+        hasher.write_u8(0x1f);
+        hasher.write(message.content.as_bytes());
+        hasher.write_u8(0x1e);
+        hasher.write(message.timestamp.as_bytes());
+        hasher.write_u8(0x1d);
+    }
+    hasher.finish()
+}
+
+fn compression_type_to_db_value(value: &CompressionType) -> &'static str {
+    match value {
+        CompressionType::None => "none",
+        CompressionType::AiSummarized => "ai_summarized",
+        CompressionType::Truncated => "truncated",
+    }
+}
+
+fn compression_type_from_db_value(value: &str) -> Option<CompressionType> {
+    match value {
+        "none" => Some(CompressionType::None),
+        "ai_summarized" => Some(CompressionType::AiSummarized),
+        "truncated" => Some(CompressionType::Truncated),
+        _ => None,
+    }
+}
+
+fn is_missing_compression_state_table_error(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(db_err) => {
+            let message = db_err.message();
+            message.contains("no such table") && message.contains(COMPRESSION_STATE_TABLE)
+        }
+        _ => false,
+    }
+}
+
+fn parse_required_u32(row: &sqlx::sqlite::SqliteRow, field: &str) -> Result<u32, sqlx::Error> {
+    let value: i64 = row.try_get(field)?;
+    u32::try_from(value).map_err(|_| {
+        sqlx::Error::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("field {field} is out of range for u32: {value}"),
+        )))
+    })
+}
+
+fn parse_required_usize(row: &sqlx::sqlite::SqliteRow, field: &str) -> Result<usize, sqlx::Error> {
+    let value: i64 = row.try_get(field)?;
+    usize::try_from(value).map_err(|_| {
+        sqlx::Error::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("field {field} is out of range for usize: {value}"),
+        )))
+    })
+}
+
+fn cache_compression_result_in_memory(
+    session_id: Uuid,
+    source_fingerprint: u64,
+    source_message_count: usize,
+    token_threshold: u32,
+    compression_percentage: u8,
+    source_token_count: u32,
+    result: &CompressionResult,
+) -> CompressionCacheEntry {
+    let effective_token_count = estimate_token_count(&result.messages);
+    let entry = CompressionCacheEntry {
+        source_fingerprint,
+        source_message_count,
+        token_threshold,
+        compression_percentage,
+        source_token_count,
+        effective_token_count,
+        result: result.clone(),
+    };
+    COMPRESSION_RESULT_CACHE.insert(session_id, entry.clone());
+    entry
+}
+
+async fn persist_compression_result(
+    pool: &SqlitePool,
+    session_id: Uuid,
+    entry: &CompressionCacheEntry,
+) -> Result<(), ChatServiceError> {
+    let warning_json = entry
+        .result
+        .warning
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|err| {
+            ChatServiceError::Validation(format!("failed to serialize compression warning: {err}"))
+        })?;
+    let result_messages_json = serde_json::to_string(&entry.result.messages).map_err(|err| {
+        ChatServiceError::Validation(format!(
+            "failed to serialize compression result messages: {err}"
+        ))
+    })?;
+
+    let query = format!(
+        "INSERT INTO {COMPRESSION_STATE_TABLE} (
+            session_id,
+            source_fingerprint,
+            source_message_count,
+            token_threshold,
+            compression_percentage,
+            source_token_count,
+            effective_token_count,
+            compression_type,
+            warning_json,
+            result_messages_json,
+            updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now', 'subsec'))
+        ON CONFLICT(session_id) DO UPDATE SET
+            source_fingerprint = excluded.source_fingerprint,
+            source_message_count = excluded.source_message_count,
+            token_threshold = excluded.token_threshold,
+            compression_percentage = excluded.compression_percentage,
+            source_token_count = excluded.source_token_count,
+            effective_token_count = excluded.effective_token_count,
+            compression_type = excluded.compression_type,
+            warning_json = excluded.warning_json,
+            result_messages_json = excluded.result_messages_json,
+            updated_at = datetime('now', 'subsec')"
+    );
+
+    let execute_result = sqlx::query(&query)
+        .bind(session_id)
+        .bind(entry.source_fingerprint.to_string())
+        .bind(entry.source_message_count as i64)
+        .bind(entry.token_threshold as i64)
+        .bind(entry.compression_percentage as i64)
+        .bind(entry.source_token_count as i64)
+        .bind(entry.effective_token_count as i64)
+        .bind(compression_type_to_db_value(&entry.result.compression_type))
+        .bind(warning_json)
+        .bind(result_messages_json)
+        .execute(pool)
+        .await;
+
+    match execute_result {
+        Ok(_) => Ok(()),
+        Err(err) if is_missing_compression_state_table_error(&err) => {
+            tracing::debug!(
+                table = COMPRESSION_STATE_TABLE,
+                "Compression state table is missing; skip persisting compression cache"
+            );
+            Ok(())
+        }
+        Err(err) => Err(ChatServiceError::Database(err)),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn cache_compression_result(
+    pool: &SqlitePool,
+    session_id: Uuid,
+    source_fingerprint: u64,
+    source_message_count: usize,
+    token_threshold: u32,
+    compression_percentage: u8,
+    source_token_count: u32,
+    result: &CompressionResult,
+) {
+    let entry = cache_compression_result_in_memory(
+        session_id,
+        source_fingerprint,
+        source_message_count,
+        token_threshold,
+        compression_percentage,
+        source_token_count,
+        result,
+    );
+
+    if let Err(err) = persist_compression_result(pool, session_id, &entry).await {
+        tracing::warn!(
+            session_id = %session_id,
+            error = %err,
+            "Failed to persist compression cache entry"
+        );
+    }
+}
+
+async fn load_persisted_compression_result(
+    pool: &SqlitePool,
+    session_id: Uuid,
+) -> Result<Option<CompressionCacheEntry>, ChatServiceError> {
+    let query = format!(
+        "SELECT
+            source_fingerprint,
+            source_message_count,
+            token_threshold,
+            compression_percentage,
+            source_token_count,
+            effective_token_count,
+            compression_type,
+            warning_json,
+            result_messages_json
+         FROM {COMPRESSION_STATE_TABLE}
+         WHERE session_id = ?1"
+    );
+
+    let row = match sqlx::query(&query)
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+    {
+        Ok(row) => row,
+        Err(err) if is_missing_compression_state_table_error(&err) => {
+            tracing::debug!(
+                table = COMPRESSION_STATE_TABLE,
+                "Compression state table is missing; skip loading persisted compression cache"
+            );
+            return Ok(None);
+        }
+        Err(err) => return Err(ChatServiceError::Database(err)),
+    };
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let source_fingerprint_raw: String = row.try_get("source_fingerprint")?;
+    let source_fingerprint = match source_fingerprint_raw.parse::<u64>() {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(
+                session_id = %session_id,
+                source_fingerprint = %source_fingerprint_raw,
+                error = %err,
+                "Invalid persisted compression fingerprint; ignoring persisted state"
+            );
+            return Ok(None);
+        }
+    };
+
+    let source_message_count = parse_required_usize(&row, "source_message_count")?;
+    let token_threshold = parse_required_u32(&row, "token_threshold")?;
+    let compression_percentage = parse_required_u32(&row, "compression_percentage")?;
+    let compression_percentage = match u8::try_from(compression_percentage) {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(
+                session_id = %session_id,
+                compression_percentage = compression_percentage,
+                error = %err,
+                "Persisted compression percentage is invalid; ignoring persisted state"
+            );
+            return Ok(None);
+        }
+    };
+    let source_token_count = parse_required_u32(&row, "source_token_count")?;
+    let effective_token_count = parse_required_u32(&row, "effective_token_count")?;
+
+    let compression_type_raw: String = row.try_get("compression_type")?;
+    let Some(compression_type) = compression_type_from_db_value(&compression_type_raw) else {
+        tracing::warn!(
+            session_id = %session_id,
+            compression_type = %compression_type_raw,
+            "Persisted compression type is invalid; ignoring persisted state"
+        );
+        return Ok(None);
+    };
+
+    let warning = row
+        .try_get::<Option<String>, _>("warning_json")?
+        .and_then(|raw| serde_json::from_str::<CompressionWarning>(&raw).ok());
+
+    let result_messages_json: String = row.try_get("result_messages_json")?;
+    let result_messages =
+        match serde_json::from_str::<Vec<SimplifiedMessage>>(&result_messages_json) {
+            Ok(messages) => messages,
+            Err(err) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %err,
+                    "Persisted compression result messages are invalid; ignoring persisted state"
+                );
+                return Ok(None);
+            }
+        };
+
+    Ok(Some(CompressionCacheEntry {
+        source_fingerprint,
+        source_message_count,
+        token_threshold,
+        compression_percentage,
+        source_token_count,
+        effective_token_count,
+        result: CompressionResult {
+            messages: result_messages,
+            compression_type,
+            warning,
+        },
+    }))
+}
+
+async fn get_compression_cache_entry(
+    pool: &SqlitePool,
+    session_id: Uuid,
+) -> Result<Option<CompressionCacheEntry>, ChatServiceError> {
+    if let Some(cached) = COMPRESSION_RESULT_CACHE.get(&session_id) {
+        return Ok(Some(cached.clone()));
+    }
+
+    let persisted = load_persisted_compression_result(pool, session_id).await?;
+    if let Some(entry) = persisted.as_ref() {
+        COMPRESSION_RESULT_CACHE.insert(session_id, entry.clone());
+        tracing::debug!(
+            session_id = %session_id,
+            source_messages = entry.source_message_count,
+            compression_type = ?entry.result.compression_type,
+            "Loaded persisted compression cache state from database"
+        );
+    }
+
+    Ok(persisted)
+}
+
 /// Compress messages if they exceed the token threshold
 ///
 /// This function implements the compression strategy:
 /// 1. Calculate total token count using tiktoken
 /// 2. If under threshold, return messages unchanged
 /// 3. If over threshold:
-///    - Calculate 25% of messages to compress
+///    - Select a prefix whose tokens are >= configured compression percentage
 ///    - Try AI summarization with each session agent
 ///    - If all agents fail, truncate to cutoff file and return warning
 ///
@@ -868,6 +1400,7 @@ fn extract_latest_assistant_from_history(history: &[LogMsg]) -> Option<String> {
 /// * `session_agents` - AI agents in the session for summarization
 /// * `workspace_path` - Workspace path for running agents
 /// * `context_dir` - Path to context directory for storing cutoff files
+#[allow(clippy::too_many_arguments)]
 pub async fn compress_messages_if_needed(
     pool: &SqlitePool,
     session_id: Uuid,
@@ -878,11 +1411,59 @@ pub async fn compress_messages_if_needed(
     workspace_path: &Path,
     context_dir: Option<&Path>,
 ) -> Result<CompressionResult, ChatServiceError> {
-    // Calculate token count
-    let token_count = estimate_token_count(&messages);
+    let source_messages = messages;
+    let source_fingerprint = calculate_messages_fingerprint(&source_messages);
+    let source_token_count = estimate_token_count(&source_messages);
+    let mut effective_messages = source_messages.clone();
+    let mut inherited_compression_type: Option<CompressionType> = None;
+    let mut inherited_warning: Option<CompressionWarning> = None;
+    let cached_entry = get_compression_cache_entry(pool, session_id).await?;
+
+    if let Some(cached) = cached_entry.as_ref()
+        && cached.source_fingerprint == source_fingerprint
+        && cached.token_threshold == token_threshold
+        && cached.compression_percentage == compression_percentage
+    {
+        tracing::debug!(
+            session_id = %session_id,
+            source_tokens = cached.source_token_count,
+            effective_tokens = cached.effective_token_count,
+            compression_type = ?cached.result.compression_type,
+            "Using cached compression result for unchanged session history"
+        );
+        return Ok(cached.result.clone());
+    }
+    if let Some(cached) = cached_entry.as_ref()
+        && cached.token_threshold == token_threshold
+        && cached.compression_percentage == compression_percentage
+        && cached.source_message_count <= source_messages.len()
+    {
+        let prefix_fingerprint =
+            calculate_messages_fingerprint(&source_messages[..cached.source_message_count]);
+        if prefix_fingerprint == cached.source_fingerprint {
+            let mut merged = cached.result.messages.clone();
+            merged.extend_from_slice(&source_messages[cached.source_message_count..]);
+            effective_messages = merged;
+            if cached.result.compression_type != CompressionType::None {
+                inherited_compression_type = Some(cached.result.compression_type.clone());
+                inherited_warning = cached.result.warning.clone();
+            }
+            tracing::debug!(
+                session_id = %session_id,
+                base_source_messages = cached.source_message_count,
+                new_messages = source_messages.len().saturating_sub(cached.source_message_count),
+                inherited_compression_type = ?cached.result.compression_type,
+                "Using incremental compression base for appended session history"
+            );
+        }
+    }
+
+    let token_count = estimate_token_count(&effective_messages);
 
     tracing::debug!(
         session_id = %session_id,
+        source_token_count = source_token_count,
+        effective_token_count = token_count,
         token_count = token_count,
         threshold = token_threshold,
         "Checking if compression is needed"
@@ -890,40 +1471,76 @@ pub async fn compress_messages_if_needed(
 
     // If under threshold, no compression needed
     if token_count <= token_threshold {
-        return Ok(CompressionResult {
-            messages,
-            compression_type: CompressionType::None,
-            warning: None,
-        });
+        let compression_type = inherited_compression_type.unwrap_or(CompressionType::None);
+        let warning = if compression_type == CompressionType::None {
+            None
+        } else {
+            inherited_warning
+        };
+        let result = CompressionResult {
+            messages: effective_messages,
+            compression_type,
+            warning,
+        };
+        cache_compression_result(
+            pool,
+            session_id,
+            source_fingerprint,
+            source_messages.len(),
+            token_threshold,
+            compression_percentage,
+            source_token_count,
+            &result,
+        )
+        .await;
+        return Ok(result);
     }
 
-    let total_messages = messages.len();
+    let total_messages = effective_messages.len();
     if total_messages == 0 {
-        return Ok(CompressionResult {
-            messages,
+        let result = CompressionResult {
+            messages: effective_messages,
             compression_type: CompressionType::None,
             warning: None,
-        });
+        };
+        cache_compression_result(
+            pool,
+            session_id,
+            source_fingerprint,
+            source_messages.len(),
+            token_threshold,
+            compression_percentage,
+            source_token_count,
+            &result,
+        )
+        .await;
+        return Ok(result);
     }
 
-    // Calculate number of messages to compress (default 25%)
-    let messages_to_compress_count =
-        ((total_messages as f64) * (compression_percentage as f64 / 100.0)).ceil() as usize;
-    let messages_to_compress_count = messages_to_compress_count.max(1).min(total_messages);
+    let (messages_to_compress_count, target_compress_tokens, selected_compress_tokens) =
+        select_messages_to_compress_by_token(
+            &effective_messages,
+            token_count,
+            compression_percentage,
+        );
 
-    let (messages_to_compress, messages_to_keep) = messages.split_at(messages_to_compress_count);
+    let (messages_to_compress, messages_to_keep) =
+        effective_messages.split_at(messages_to_compress_count);
 
     tracing::info!(
         session_id = %session_id,
         total = total_messages,
+        total_tokens = token_count,
+        target_compress_tokens = target_compress_tokens,
+        selected_compress_tokens = selected_compress_tokens,
         to_compress = messages_to_compress_count,
         to_keep = messages_to_keep.len(),
         "Compressing messages"
     );
 
     // Try AI summarization with available agents
-    if !session_agents.is_empty() {
-        if let Some(summary) = try_summarize_with_agents(
+    if !session_agents.is_empty()
+        && let Some(summary) = try_summarize_with_agents(
             pool,
             session_id,
             session_agents,
@@ -931,22 +1548,49 @@ pub async fn compress_messages_if_needed(
             workspace_path,
         )
         .await
-        {
-            // Create summary message and prepend to kept messages
-            let summary_message = SimplifiedMessage {
-                sender: "system:summary".to_string(),
-                content: format!("[History Summary]\n{}", summary),
-                timestamp: Utc::now().to_rfc3339(),
-            };
+    {
+        // Create summary message and prepend to kept messages
+        let summary_message = SimplifiedMessage {
+            sender: "system:summary".to_string(),
+            content: format!("[History Summary]\n{}", summary),
+            timestamp: Utc::now().to_rfc3339(),
+        };
 
-            let mut result_messages = vec![summary_message];
-            result_messages.extend(messages_to_keep.to_vec());
+        let mut result_messages = vec![summary_message];
+        result_messages.extend(messages_to_keep.to_vec());
+        let compressed_token_count = estimate_token_count(&result_messages);
 
-            return Ok(CompressionResult {
+        if compressed_token_count >= token_count {
+            tracing::warn!(
+                session_id = %session_id,
+                before_tokens = token_count,
+                after_tokens = compressed_token_count,
+                "AI summarization did not reduce token usage, falling back to truncation"
+            );
+        } else {
+            tracing::info!(
+                session_id = %session_id,
+                before_tokens = token_count,
+                after_tokens = compressed_token_count,
+                "AI summarization reduced token usage"
+            );
+            let result = CompressionResult {
                 messages: result_messages,
                 compression_type: CompressionType::AiSummarized,
                 warning: None,
-            });
+            };
+            cache_compression_result(
+                pool,
+                session_id,
+                source_fingerprint,
+                source_messages.len(),
+                token_threshold,
+                compression_percentage,
+                source_token_count,
+                &result,
+            )
+            .await;
+            return Ok(result);
         }
     }
 
@@ -972,10 +1616,10 @@ pub async fn compress_messages_if_needed(
         append_to_split_file(session_id, messages_to_compress)
             .await
             .map_err(|e| {
-                ChatServiceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to create split file: {}", e),
-                ))
+                ChatServiceError::Io(std::io::Error::other(format!(
+                    "Failed to create split file: {}",
+                    e
+                )))
             })?
     };
 
@@ -998,19 +1642,43 @@ pub async fn compress_messages_if_needed(
 
     let cutoff_path_str = cutoff_path.to_string_lossy().to_string();
 
-    // Return remaining messages with warning
-    Ok(CompressionResult {
-        messages: messages_to_keep.to_vec(),
+    // Keep a compact summary marker at the front so history file always contains
+    // "compressed context + remaining uncompressed messages".
+    let mut result_messages = vec![SimplifiedMessage {
+        sender: "system:summary".to_string(),
+        content: format!(
+            "[History Summary - Fallback]\nAI summarization failed; archived {} messages (~{} tokens) to {}",
+            messages_to_compress_count, selected_compress_tokens, cutoff_path_str
+        ),
+        timestamp: Utc::now().to_rfc3339(),
+    }];
+    result_messages.extend(messages_to_keep.to_vec());
+
+    // Return summary marker + remaining messages with warning
+    let result = CompressionResult {
+        messages: result_messages,
         compression_type: CompressionType::Truncated,
         warning: Some(CompressionWarning {
             code: "COMPRESSION_FALLBACK".to_string(),
             message: format!(
-                "AI summarization failed; archived {} messages to cutoff file",
-                messages_to_compress_count
+                "AI summarization failed or was ineffective; archived {} messages (~{} tokens) to cutoff file",
+                messages_to_compress_count, selected_compress_tokens
             ),
             split_file_path: cutoff_path_str,
         }),
-    })
+    };
+    cache_compression_result(
+        pool,
+        session_id,
+        source_fingerprint,
+        source_messages.len(),
+        token_threshold,
+        compression_percentage,
+        source_token_count,
+        &result,
+    )
+    .await;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -1021,7 +1689,8 @@ mod tests {
 
     use super::{
         CompressionType, SimplifiedMessage, all_agents_running, compress_messages_if_needed,
-        parse_mentions, prioritize_summary_agents,
+        limit_summary_input_messages, parse_mentions, parse_send_message_directives,
+        prioritize_summary_agents, select_messages_to_compress_by_token,
     };
 
     #[test]
@@ -1040,6 +1709,47 @@ mod tests {
     fn de_dupes_mentions_in_order() {
         let mentions = parse_mentions("@a @a @b");
         assert_eq!(mentions, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn parses_send_message_directives_and_dedupes_targets() {
+        let mentions = parse_send_message_directives(
+            "notify [sendMessageTo@@{alice}] then [sendMessageTo@@{bob}] and [sendMessageTo@@{alice}]",
+        );
+        assert_eq!(mentions, vec!["alice", "bob"]);
+    }
+
+    #[test]
+    fn parse_send_message_directives_ignores_plain_at_mentions() {
+        let mentions = parse_send_message_directives("@alice please review this");
+        assert!(mentions.is_empty());
+    }
+
+    #[test]
+    fn parse_send_message_directives_ignores_invalid_targets() {
+        let mentions = parse_send_message_directives(
+            "[sendMessageTo@@] [sendMessageTo@@{bad target}] [sendMessageTo@@{ok_agent}]",
+        );
+        assert_eq!(mentions, vec!["ok_agent"]);
+    }
+
+    #[test]
+    fn parse_send_message_directives_supports_non_brace_targets() {
+        let mentions = parse_send_message_directives(
+            "[sendMessageTo@@researcher] and [sendMessageTo@@{planner}]",
+        );
+        assert_eq!(mentions, vec!["researcher", "planner"]);
+    }
+
+    #[test]
+    fn parse_send_message_directives_supports_unicode_targets() {
+        let mentions = parse_send_message_directives(
+            "[sendMessageTo@@{\u{5C0F}\u{660E}}] and [sendMessageTo@@{\u{30C6}\u{30B9}\u{30C8}-agent}]",
+        );
+        assert_eq!(
+            mentions,
+            vec!["\u{5C0F}\u{660E}", "\u{30C6}\u{30B9}\u{30C8}-agent"]
+        );
     }
 
     fn make_session_agent(state: ChatSessionAgentState) -> ChatSessionAgent {
@@ -1088,6 +1798,90 @@ mod tests {
             make_session_agent(ChatSessionAgentState::Running),
             make_session_agent(ChatSessionAgentState::Running),
         ]));
+    }
+
+    #[test]
+    fn select_messages_to_compress_uses_token_budget() {
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "heavy ".repeat(500),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:bob".to_string(),
+                content: "small".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "small".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "small".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let total_tokens = super::estimate_token_count(&messages);
+        let (count, target_tokens, selected_tokens) =
+            select_messages_to_compress_by_token(&messages, total_tokens, 50);
+
+        // 50% by message count would be 2, but token-based should pick only the heavy first message.
+        assert_eq!(count, 1);
+        assert!(selected_tokens >= target_tokens);
+    }
+
+    #[test]
+    fn limit_summary_input_messages_keeps_all_when_under_limit() {
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "short".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "short reply".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let (limited, before, after) = limit_summary_input_messages(&messages, u32::MAX);
+        assert_eq!(limited.len(), messages.len());
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn limit_summary_input_messages_keeps_recent_slice_when_over_limit() {
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:a".to_string(),
+                content: "old ".repeat(300),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:b".to_string(),
+                content: "middle ".repeat(300),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:c".to_string(),
+                content: "recent ".repeat(300),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let (limited, before, after) = limit_summary_input_messages(&messages, 200);
+        assert!(limited.len() < messages.len());
+        assert_eq!(
+            limited.last().map(|m| m.content.as_str()),
+            Some(messages[2].content.as_str())
+        );
+        assert!(before > after);
+        assert!(after <= 200 || limited.len() == 1);
     }
 
     #[test]
@@ -1153,7 +1947,27 @@ mod tests {
         .expect("compression should succeed with fallback");
 
         assert_eq!(result.compression_type, CompressionType::Truncated);
-        assert_eq!(result.messages.len(), 2);
+        assert!(result.messages.len() <= messages.len());
+        assert!(
+            super::estimate_token_count(&result.messages) < super::estimate_token_count(&messages),
+            "fallback truncation should reduce token count"
+        );
+        assert_eq!(
+            result
+                .messages
+                .first()
+                .map(|message| message.sender.as_str()),
+            Some("system:summary"),
+            "fallback should keep a compact summary marker at the front"
+        );
+        assert!(
+            result
+                .messages
+                .first()
+                .map(|message| message.content.contains("[History Summary - Fallback]"))
+                .unwrap_or(false),
+            "fallback summary marker should describe archival"
+        );
 
         let warning = result.warning.expect("fallback should include warning");
         assert_eq!(warning.code, "COMPRESSION_FALLBACK");
@@ -1163,6 +1977,301 @@ mod tests {
         );
 
         let _ = tokio::fs::remove_file(&warning.split_file_path).await;
+    }
+
+    #[tokio::test]
+    async fn compress_messages_reuses_cached_result_for_unchanged_history() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        let session_id = Uuid::new_v4();
+        let workspace = std::path::Path::new(".");
+        let context_dir = tempfile::tempdir().expect("create temp context dir");
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "A very long message that should exceed tiny threshold quickly".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "Second long message for compression coverage".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:bob".to_string(),
+                content: "Recent message to keep".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let first = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages.clone(),
+            1,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("first compression should succeed");
+        assert_eq!(first.compression_type, CompressionType::Truncated);
+        let first_path = first
+            .warning
+            .as_ref()
+            .expect("warning expected")
+            .split_file_path
+            .clone();
+
+        let second = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages.clone(),
+            1,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("second compression should succeed");
+        assert_eq!(second.compression_type, CompressionType::Truncated);
+        let second_path = second
+            .warning
+            .as_ref()
+            .expect("warning expected")
+            .split_file_path
+            .clone();
+
+        assert_eq!(
+            first_path, second_path,
+            "unchanged history should reuse cached compression output"
+        );
+
+        let cutoff_count = std::fs::read_dir(context_dir.path())
+            .expect("read context dir")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("cutoff_message_")
+            })
+            .count();
+        assert_eq!(
+            cutoff_count, 1,
+            "cached compression should avoid creating extra cutoff files"
+        );
+    }
+
+    #[tokio::test]
+    async fn compress_messages_reuses_persisted_state_after_cache_clear() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        let create_state_table_sql = format!(
+            "CREATE TABLE {} (
+                session_id BLOB PRIMARY KEY,
+                source_fingerprint TEXT NOT NULL,
+                source_message_count INTEGER NOT NULL,
+                token_threshold INTEGER NOT NULL,
+                compression_percentage INTEGER NOT NULL,
+                source_token_count INTEGER NOT NULL,
+                effective_token_count INTEGER NOT NULL,
+                compression_type TEXT NOT NULL,
+                warning_json TEXT,
+                result_messages_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'subsec')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now', 'subsec'))
+            )",
+            super::COMPRESSION_STATE_TABLE
+        );
+        sqlx::query(&create_state_table_sql)
+            .execute(&pool)
+            .await
+            .expect("create compression state table");
+
+        let session_id = Uuid::new_v4();
+        let workspace = std::path::Path::new(".");
+        let context_dir = tempfile::tempdir().expect("create temp context dir");
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "A very long message that should exceed tiny threshold quickly".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "Second long message for compression coverage".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:bob".to_string(),
+                content: "Recent message to keep".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let first = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages.clone(),
+            1,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("first compression should succeed");
+        assert_eq!(first.compression_type, CompressionType::Truncated);
+        let first_path = first
+            .warning
+            .as_ref()
+            .expect("warning expected")
+            .split_file_path
+            .clone();
+
+        let persisted_count = sqlx::query_scalar::<_, i64>(&format!(
+            "SELECT COUNT(1) FROM {} WHERE session_id = ?1",
+            super::COMPRESSION_STATE_TABLE
+        ))
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .expect("query persisted compression rows");
+        assert_eq!(persisted_count, 1);
+
+        super::COMPRESSION_RESULT_CACHE.remove(&session_id);
+
+        let second = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages,
+            1,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("second compression should succeed from persisted state");
+        assert_eq!(second.compression_type, CompressionType::Truncated);
+        let second_path = second
+            .warning
+            .as_ref()
+            .expect("warning expected")
+            .split_file_path
+            .clone();
+
+        assert_eq!(
+            first_path, second_path,
+            "persisted cache should avoid re-compressing unchanged history after cache reset"
+        );
+
+        let cutoff_count = std::fs::read_dir(context_dir.path())
+            .expect("read context dir")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("cutoff_message_")
+            })
+            .count();
+        assert_eq!(
+            cutoff_count, 1,
+            "persisted cache should avoid creating extra cutoff files after cache reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn compress_messages_uses_compacted_base_for_appended_history() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        let session_id = Uuid::new_v4();
+        let workspace = std::path::Path::new(".");
+        let context_dir = tempfile::tempdir().expect("create temp context dir");
+        let base_messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "A very long message that should exceed threshold".repeat(200),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "Another very long message for compression".repeat(200),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:bob".to_string(),
+                content: "small keep".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "small keep too".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let base_tokens = super::estimate_token_count(&base_messages);
+        let threshold = base_tokens.saturating_sub(1).max(1);
+
+        let first = compress_messages_if_needed(
+            &pool,
+            session_id,
+            base_messages.clone(),
+            threshold,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("first compression should succeed");
+        assert_eq!(first.compression_type, CompressionType::Truncated);
+
+        let mut appended = base_messages.clone();
+        appended.push(SimplifiedMessage {
+            sender: "user:charlie".to_string(),
+            content: "new tail message".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        });
+
+        let second = compress_messages_if_needed(
+            &pool,
+            session_id,
+            appended,
+            threshold,
+            50,
+            &[],
+            workspace,
+            Some(context_dir.path()),
+        )
+        .await
+        .expect("second compression should succeed");
+
+        // Should keep using compacted base and just append new tail without re-compressing old long prefix.
+        assert!(second.messages.len() >= first.messages.len());
+
+        let cutoff_count = std::fs::read_dir(context_dir.path())
+            .expect("read context dir")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("cutoff_message_")
+            })
+            .count();
+        assert_eq!(
+            cutoff_count, 1,
+            "appended history should not trigger another cutoff for already compressed prefix"
+        );
     }
 
     #[tokio::test]

@@ -31,6 +31,9 @@
   },
   "input": {
     "mentionAgents": "提及 Agent",
+    "mentionAllOption": "所有成员（@all）",
+    "mentionAllSuggestion": "@所有成员",
+    "mentionAllBadge": "@all",
     "routeToAgents": "路由到 Agent",
     "replyingTo": "回复 {{name}}",
     "referencedMessage": "引用的消息",

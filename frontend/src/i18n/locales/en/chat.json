@@ -31,6 +31,9 @@
   },
   "input": {
     "mentionAgents": "Mention agents",
+    "mentionAllOption": "All members (@all)",
+    "mentionAllSuggestion": "@All members",
+    "mentionAllBadge": "@all",
     "routeToAgents": "Route to agents",
     "replyingTo": "Replying to {{name}}",
     "referencedMessage": "Referenced message",

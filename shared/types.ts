@@ -737,7 +737,7 @@ export type NormalizedEntry = { timestamp: string | null, entry_type: Normalized
 
 export type NormalizedEntryType = { "type": "user_message" } | { "type": "user_feedback", denied_tool: string, } | { "type": "assistant_message" } | { "type": "tool_use", tool_name: string, action_type: ActionType, status: ToolStatus, } | { "type": "system_message" } | { "type": "error_message", error_type: NormalizedEntryError, } | { "type": "thinking" } | { "type": "loading" } | { "type": "next_action", failed: boolean, execution_processes: number, needs_setup: boolean, } | { "type": "token_usage_info" } & TokenUsageInfo;
 
-export type TokenUsageInfo = { total_tokens: number, model_context_window: number, input_tokens?: number, output_tokens?: number, cache_read_tokens?: number, is_estimated?: boolean, };
+export type TokenUsageInfo = { total_tokens: number, model_context_window: number, input_tokens: number | null, output_tokens: number | null, cache_read_tokens: number | null, is_estimated: boolean, };
 
 export type FileChange = { "action": "write", content: string, } | { "action": "delete" } | { "action": "rename", new_path: string, } | { "action": "edit", 
 /**

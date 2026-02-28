@@ -5,6 +5,20 @@ import type { MessageTone } from './types';
 // can be start-of-text or any character so `hello@` also opens suggestions.
 export const mentionRegex = /(^|[\s\S])@([\p{L}\p{N}_-]*)$/u;
 export const mentionTokenRegex = /(^|\s)@([\p{L}\p{N}_-]+)/gu;
+export const mentionAllKeyword = 'all';
+export const mentionAllAliases = [
+  mentionAllKeyword,
+  'everyone',
+  'allmembers',
+  'all_member',
+  '所有人',
+  '全体',
+] as const;
+const mentionAllAliasSet = new Set(
+  mentionAllAliases.map((alias) => alias.toLowerCase())
+);
+export const isMentionAllAlias = (value: string): boolean =>
+  mentionAllAliasSet.has(value.trim().toLowerCase());
 export const memberNameRegex = /^[\p{L}\p{N}_-]+$/u;
 export const MAX_MEMBER_NAME_LENGTH = 30;
 export const getMemberNameLength = (value: string) =>

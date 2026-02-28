@@ -80,19 +80,38 @@ pub struct UpdateChatSessionAgentRequest {
     pub workspace_path: Option<String>,
 }
 
-fn normalize_workspace_path(workspace_path: Option<String>) -> Result<Option<String>, ApiError> {
-    let Some(raw_path) = workspace_path else {
-        return Ok(None);
-    };
+#[cfg(windows)]
+fn is_windows_reserved_name(name: &str) -> bool {
+    let upper = name.trim().trim_end_matches('.').to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
 
-    let trimmed = raw_path.trim();
-    if trimmed.is_empty() {
-        return Err(ApiError::BadRequest(
-            "Workspace path is required.".to_string(),
-        ));
-    }
-
-    if trimmed.chars().any(|ch| ch == '\0') {
+fn validate_workspace_path_legality(trimmed: &str) -> Result<PathBuf, ApiError> {
+    if trimmed.chars().any(|ch| ch == '\0' || ch.is_control()) {
         return Err(ApiError::BadRequest(
             "Workspace path contains invalid characters.".to_string(),
         ));
@@ -105,6 +124,61 @@ fn normalize_workspace_path(workspace_path: Option<String>) -> Result<Option<Str
     {
         return Err(ApiError::BadRequest(
             "Workspace path cannot contain '..'.".to_string(),
+        ));
+    }
+
+    #[cfg(windows)]
+    {
+        for component in parsed_path.components() {
+            if let Component::Normal(value) = component {
+                let segment = value.to_string_lossy();
+                if segment
+                    .chars()
+                    .any(|ch| matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+                {
+                    return Err(ApiError::BadRequest(
+                        "Workspace path contains invalid Windows filename characters.".to_string(),
+                    ));
+                }
+
+                if is_windows_reserved_name(&segment) {
+                    return Err(ApiError::BadRequest(format!(
+                        "Workspace path contains reserved Windows name: {segment}"
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(parsed_path)
+}
+
+async fn normalize_workspace_path(
+    workspace_path: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    let Some(raw_path) = workspace_path else {
+        return Ok(None);
+    };
+
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Workspace path is required.".to_string(),
+        ));
+    }
+
+    let parsed_path = validate_workspace_path_legality(trimmed)?;
+    let metadata = tokio::fs::metadata(&parsed_path)
+        .await
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => {
+                ApiError::BadRequest("Workspace path does not exist.".to_string())
+            }
+            _ => ApiError::BadRequest(format!("Workspace path is not accessible: {err}")),
+        })?;
+    if !metadata.is_dir() {
+        return Err(ApiError::BadRequest(
+            "Workspace path must be an existing directory.".to_string(),
         ));
     }
 
@@ -151,7 +225,7 @@ pub async fn create_session_agent(
         return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
-    let workspace_path = normalize_workspace_path(payload.workspace_path)?;
+    let workspace_path = normalize_workspace_path(payload.workspace_path).await?;
 
     if let Some(existing) = ChatSessionAgent::find_by_session_and_agent(
         &deployment.db().pool,
@@ -220,7 +294,7 @@ pub async fn update_session_agent(
         return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
-    let workspace_path = normalize_workspace_path(payload.workspace_path)?;
+    let workspace_path = normalize_workspace_path(payload.workspace_path).await?;
 
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?

@@ -31,6 +31,9 @@
   },
   "input": {
     "mentionAgents": "エージェントをメンション",
+    "mentionAllOption": "全員（@all）",
+    "mentionAllSuggestion": "@全員",
+    "mentionAllBadge": "@all",
     "routeToAgents": "エージェントにルーティング",
     "replyingTo": "{{name}}に返信",
     "referencedMessage": "参照メッセージ",

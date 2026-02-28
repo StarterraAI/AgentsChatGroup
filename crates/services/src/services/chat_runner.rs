@@ -54,6 +54,7 @@ const AGENTS_CHATGROUP_HOME_DIR: &str = ".agents-chatgroup";
 const AGENTS_CHATGROUP_WORKSPACE_DIR: &str = ".agents_chatgroup";
 const RUNS_DIR_NAME: &str = "runs";
 const CONTEXT_DIR_NAME: &str = "context";
+const LEGACY_COMPACTED_CONTEXT_FILE_NAME: &str = "messages_compacted.background.jsonl";
 const RUN_RECORDS_DIR_NAME: &str = "run_records";
 const RESERVED_USER_HANDLE: &str = "you";
 const EXECUTOR_PROFILE_VARIANT_KEY: &str = "executor_profile_variant";
@@ -211,6 +212,9 @@ pub struct ChatRunner {
     // Message queue for each session_agent, keyed by session_agent_id
     // When an agent is running, new messages are queued here and processed after completion
     pending_messages: Arc<DashMap<Uuid, VecDeque<PendingMessage>>>,
+    // Session-level background context compaction dedupe.
+    // At most one compaction task per session is allowed at a time.
+    background_compaction_inflight: Arc<DashMap<Uuid, ()>>,
 }
 
 impl ChatRunner {
@@ -220,6 +224,7 @@ impl ChatRunner {
             streams: Arc::new(DashMap::new()),
             cancellation_tokens: Arc::new(DashMap::new()),
             pending_messages: Arc::new(DashMap::new()),
+            background_compaction_inflight: Arc::new(DashMap::new()),
         }
     }
 
@@ -886,6 +891,7 @@ impl ChatRunner {
                 failed_flag.clone(),
                 chain_depth,
                 context_snapshot.context_compacted,
+                context_snapshot.compression_warning.clone(),
                 self.clone(),
                 source_message.id,
                 agent.name.clone(),
@@ -1010,16 +1016,8 @@ impl ChatRunner {
     }
 
     fn apply_reply_prefix(content: &str, handle: Option<&str>) -> String {
-        let Some(handle) = handle else {
-            return content.to_string();
-        };
-        let prefix = format!("@{handle} ");
-        let trimmed = content.trim_start();
-        if trimmed.starts_with(&prefix) {
-            content.to_string()
-        } else {
-            format!("{prefix}{trimmed}")
-        }
+        let _ = handle;
+        content.to_string()
     }
 
     async fn capture_git_diff(workspace_path: &Path, run_dir: &Path) -> Option<DiffInfo> {
@@ -1171,29 +1169,36 @@ impl ChatRunner {
             .join(CONTEXT_DIR_NAME)
             .join(session_id.to_string());
         fs::create_dir_all(&context_dir).await?;
+        let legacy_compacted_context_path = context_dir.join(LEGACY_COMPACTED_CONTEXT_FILE_NAME);
+        if let Err(err) = fs::remove_file(&legacy_compacted_context_path).await
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %err,
+                path = %legacy_compacted_context_path.display(),
+                "Failed to remove legacy background compacted context file"
+            );
+        }
 
-        // Use LLM-based compacted context for better compression
-        // When messages > 20, compresses oldest 5 into 1 summary, keeping 16 total messages
-        let workspace_path_buf = PathBuf::from(workspace_path);
-        let compacted = crate::services::chat::build_compacted_context(
-            &self.db.pool,
-            session_id,
-            None, // runner_type - will be used for LLM summarization in future
-            Some(workspace_path_buf.as_path()),
-            Some(context_dir.as_path()),
-        )
-        .await?;
-
-        let context_compacted = compacted.context_compacted;
-        let compression_warning = compacted.compression_warning;
-        let jsonl = compacted.jsonl;
+        // Main path must never block on summarization: always build full context synchronously.
+        let full_context =
+            crate::services::chat::build_full_context(&self.db.pool, session_id).await?;
+        let jsonl = full_context.jsonl;
         let context_path = context_dir.join("messages.jsonl");
         fs::write(&context_path, jsonl.as_bytes()).await?;
         tracing::info!(
             session_id = %session_id,
             workspace_path = %workspace_path,
             context_path = %context_path.display(),
-            "Using workspace context"
+            "Using workspace context (full, non-blocking)"
+        );
+
+        // Kick off background compaction for future runs, without blocking current run.
+        self.spawn_background_context_compaction(
+            session_id,
+            workspace_path.to_string(),
+            context_dir.clone(),
         );
 
         fs::create_dir_all(run_dir).await?;
@@ -1203,9 +1208,81 @@ impl ChatRunner {
         Ok(ContextSnapshot {
             workspace_path: context_path,
             run_path: run_context_path,
-            context_compacted,
-            compression_warning,
+            context_compacted: false,
+            compression_warning: None,
         })
+    }
+
+    fn spawn_background_context_compaction(
+        &self,
+        session_id: Uuid,
+        workspace_path: String,
+        context_dir: PathBuf,
+    ) {
+        if self
+            .background_compaction_inflight
+            .contains_key(&session_id)
+        {
+            return;
+        }
+        self.background_compaction_inflight.insert(session_id, ());
+
+        let runner = self.clone();
+        tokio::spawn(async move {
+            let workspace_path_buf = PathBuf::from(&workspace_path);
+            let result = crate::services::chat::build_compacted_context(
+                &runner.db.pool,
+                session_id,
+                None,
+                Some(workspace_path_buf.as_path()),
+                Some(context_dir.as_path()),
+            )
+            .await;
+
+            match result {
+                Ok(compacted) => {
+                    if compacted.context_compacted {
+                        let workspace_context_path = context_dir.join("messages.jsonl");
+                        if let Err(err) =
+                            fs::write(&workspace_context_path, compacted.jsonl.as_bytes()).await
+                        {
+                            tracing::warn!(
+                                session_id = %session_id,
+                                error = %err,
+                                path = %workspace_context_path.display(),
+                                "Failed to update workspace context with compacted history"
+                            );
+                        } else {
+                            tracing::info!(
+                                session_id = %session_id,
+                                path = %workspace_context_path.display(),
+                                compacted_message_count = compacted.messages.len(),
+                                "Background context compaction completed and updated workspace context"
+                            );
+                        }
+                    }
+
+                    if let Some(warning) = compacted.compression_warning {
+                        runner.emit(
+                            session_id,
+                            ChatStreamEvent::CompressionWarning {
+                                session_id,
+                                warning: warning.into(),
+                            },
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %err,
+                        "Background context compaction failed"
+                    );
+                }
+            }
+
+            runner.background_compaction_inflight.remove(&session_id);
+        });
     }
 
     async fn build_reference_context(
@@ -1412,29 +1489,44 @@ impl ChatRunner {
 
         // 2. Group members info (separate from AGENT_ROLE)
         system.push_str("[GROUP_MEMBERS]\n");
-        system.push_str("当前群聊中的AI成员:\n");
+        system.push_str("Current AI members in this group:\n");
         if session_agents.is_empty() {
-            system.push_str("- 无其他AI成员\n");
+            system.push_str("- No other AI members\n");
         } else {
             for member in session_agents {
-                let description = member.description.as_deref().unwrap_or("AI助手");
+                let description = member.description.as_deref().unwrap_or("AI assistant");
                 system.push_str(&format!(
-                    "- @{}: {} (状态: {:?})\n",
+                    "- {}: {} (state: {:?})\n",
                     member.name, description, member.state
                 ));
             }
         }
         system.push_str("[/GROUP_MEMBERS]\n\n");
 
-        // 3. Critical instruction to read history file
+        // 3. Message routing protocol
+        system.push_str("[MESSAGE_ROUTING]\n");
+        system.push_str(
+            "When you want to forward work to another member, include an explicit routing marker in your reply:\n",
+        );
+        system.push_str("[sendMessageTo@@member_name]\n");
+        system.push_str("Rules:\n");
+        system.push_str("- Only this marker triggers forwarding.\n");
+        system.push_str("- Both [sendMessageTo@@member_name] and [sendMessageTo@@{member_name}] are accepted.\n");
+        system.push_str("- Plain @member text is normal content and never triggers forwarding.\n");
+        system.push_str("- member_name must exactly match a name in [GROUP_MEMBERS].\n");
+        system.push_str("- Multiple targets are allowed by adding multiple markers.\n");
+        system.push_str("[/MESSAGE_ROUTING]\n\n");
+
+        // 4. Critical instruction to read history file
         system.push_str("[CRITICAL_INSTRUCTION]\n");
-        system.push_str("在执行任何任务之前，你必须首先读取群聊历史消息文件:\n");
+        system
+            .push_str("Before doing any task, you must first read the group chat history file:\n");
         system.push_str(&format!(
-            "文件路径: {}\n",
+            "file_path: {}\n",
             chat_history_path.to_string_lossy()
         ));
-        system.push_str("文件格式: JSON，包含 sender 和 content 字段\n");
-        system.push_str("这是强制性要求，必须先了解群聊上下文再回复。\n");
+        system.push_str("format: JSON, containing sender and content fields\n");
+        system.push_str("This is mandatory: understand group context first, then respond.\n");
         system.push_str("[/CRITICAL_INSTRUCTION]\n");
 
         system
@@ -1540,7 +1632,7 @@ impl ChatRunner {
 
         // Combine system and user prompts
         let mut full_prompt = system_prompt;
-        full_prompt.push_str("\n");
+        full_prompt.push('\n');
 
         full_prompt.push_str(&user_prompt);
         full_prompt
@@ -1695,14 +1787,14 @@ impl ChatRunner {
         stdout_line_buffer.clear();
     }
 
-    /// 使用tiktoken估算文本的token数量
+    /// 浣跨敤tiktoken浼扮畻鏂囨湰鐨則oken鏁伴噺
     fn estimate_tokens_with_tiktoken(text: &str) -> u32 {
         use tiktoken_rs::cl100k_base;
 
         match cl100k_base() {
             Ok(bpe) => bpe.encode_with_special_tokens(text).len() as u32,
             Err(_) => {
-                // fallback: 约4个字符一个token
+                // fallback: 绾?涓瓧绗︿竴涓猼oken
                 (text.len() / 4) as u32
             }
         }
@@ -1777,6 +1869,7 @@ impl ChatRunner {
         failed_flag: Arc<AtomicBool>,
         chain_depth: u32,
         context_compacted: bool,
+        compression_warning: Option<chat::CompressionWarning>,
         runner: ChatRunner,
         source_message_id: Uuid,
         agent_name: String,
@@ -1948,11 +2041,11 @@ impl ChatRunner {
                             "chain_depth": chain_depth + 1,
                         });
 
-                        // 如果没有token_usage，使用tiktoken估算
+                        // 濡傛灉娌℃湁token_usage锛屼娇鐢╰iktoken浼扮畻
                         let token_usage = if let Some(ref usage) = last_token_usage {
                             usage.clone()
                         } else {
-                            // 读取input prompt进行估算
+                            // 璇诲彇input prompt杩涜浼扮畻
                             let input_path = run_dir.join("input.txt");
                             let prompt_content =
                                 fs::read_to_string(&input_path).await.unwrap_or_default();
@@ -1980,6 +2073,13 @@ impl ChatRunner {
 
                         if context_compacted {
                             meta["context_compacted"] = true.into();
+                        }
+                        if let Some(warning) = compression_warning.as_ref() {
+                            meta["compression_warning"] = serde_json::json!({
+                                "code": warning.code,
+                                "message": warning.message,
+                                "split_file_path": warning.split_file_path,
+                            });
                         }
 
                         if let Some(diff) = diff_info.as_ref() {
@@ -2011,8 +2111,8 @@ impl ChatRunner {
                             )
                             .await
                         {
-                            // Call handle_message to process @mentions in the agent's response
-                            // This enables AI-to-AI message routing (chain calls)
+                            // Call handle_message to process explicit routing directives
+                            // This enables AI-to-AI message forwarding (chain calls)
                             if let Ok(Some(session)) =
                                 ChatSession::find_by_id(&db.pool, session_id).await
                             {

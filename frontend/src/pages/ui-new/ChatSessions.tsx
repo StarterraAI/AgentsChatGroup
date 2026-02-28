@@ -47,6 +47,8 @@ import {
   useDiffViewer,
   fallbackRunnerTypes,
   memberNameRegex,
+  mentionAllKeyword,
+  isMentionAllAlias,
   MAX_MEMBER_NAME_LENGTH,
   getMemberNameLength,
   getMessageTone,
@@ -394,6 +396,7 @@ export function ChatSessions() {
     selectedMentions,
     setSelectedMentions,
     mentionQuery,
+    showMentionAllSuggestion,
     replyToMessage,
     setReplyToMessage,
     inputRef,
@@ -406,6 +409,17 @@ export function ChatSessions() {
     highlightedMentionIndex,
     handleMentionKeyDown,
   } = useMessageInput(mentionAgents);
+
+  const agentOptionsWithAll = useMemo(
+    () => [
+      {
+        value: mentionAllKeyword,
+        label: t('input.mentionAllOption'),
+      },
+      ...agentOptions,
+    ],
+    [agentOptions, t]
+  );
 
   // Diff viewer
   const {
@@ -1264,8 +1278,29 @@ export function ChatSessions() {
     if (!activeSessionId || isArchived) return;
     const trimmed = draft.trim();
     const contentMentions = extractMentions(draft);
-    const mentionsToInject = selectedMentions.filter(
-      (name) => !contentMentions.has(name)
+    const directContentMentions = new Set(
+      Array.from(contentMentions).filter(
+        (name) => !isMentionAllAlias(name)
+      )
+    );
+    const allMentionTokens = [
+      ...Array.from(contentMentions),
+      ...selectedMentions,
+    ];
+    const expandedMentions = new Set<string>();
+
+    for (const mention of allMentionTokens) {
+      if (isMentionAllAlias(mention)) {
+        for (const agent of mentionAgents) {
+          expandedMentions.add(agent.name);
+        }
+        continue;
+      }
+      expandedMentions.add(mention);
+    }
+
+    const mentionsToInject = Array.from(expandedMentions).filter(
+      (name) => !directContentMentions.has(name)
     );
     const mentionPrefix =
       mentionsToInject.length > 0
@@ -1275,7 +1310,7 @@ export function ChatSessions() {
 
     if (!content && attachedFiles.length === 0) return;
 
-    const allMentions = new Set([...contentMentions, ...selectedMentions]);
+    const allMentions = expandedMentions;
     const runningMentionedAgents: string[] = [];
     allMentions.forEach((name) => {
       const agentId = agentIdByName.get(name);
@@ -1830,7 +1865,13 @@ export function ChatSessions() {
       setTeamImportName(null);
     } catch (error) {
       console.error('Failed to import team preset', error);
-      setMemberError('Failed to import team preset.');
+      if (error instanceof ApiError && error.message) {
+        setMemberError(error.message);
+      } else if (error instanceof Error && error.message) {
+        setMemberError(error.message);
+      } else {
+        setMemberError('Failed to import team preset.');
+      }
     } finally {
       setIsImportingTeam(false);
     }
@@ -2535,9 +2576,10 @@ export function ChatSessions() {
           inputRef={inputRef}
           selectedMentions={selectedMentions}
           onSelectedMentionsChange={setSelectedMentions}
-          agentOptions={agentOptions}
+          agentOptions={agentOptionsWithAll}
           mentionAgentsCount={mentionAgents.length}
           mentionQuery={mentionQuery}
+          showMentionAllSuggestion={showMentionAllSuggestion}
           visibleMentionSuggestions={visibleMentionSuggestions}
           highlightedMentionIndex={highlightedMentionIndex}
           onMentionSelect={handleMentionSelect}

@@ -35,6 +35,7 @@ import {
   extractAttachments,
   detectApiError,
   formatBytes,
+  renderSendMessageDirectives,
 } from '../utils';
 import { formatTokenCount } from '@/utils/string';
 
@@ -134,6 +135,9 @@ export function ChatMessageItem({
     !Array.isArray(message.meta) &&
     (message.meta as { context_compacted?: unknown }).context_compacted ===
       true;
+  const displayContent = isAgent
+    ? renderSendMessageDirectives(message.content)
+    : message.content;
   // System messages
   if (message.sender_type === ChatSenderType.system) {
     return (
@@ -329,7 +333,7 @@ export function ChatMessageItem({
                 </div>
               ) : null;
             })()}
-            <ChatMarkdown content={message.content} />
+            <ChatMarkdown content={displayContent} />
             {mentionList.length > 0 && (
               <div className="chat-session-mentions mt-half flex flex-wrap items-center gap-half text-xs text-low">
                 <span>{t('message.mentions')}:</span>
@@ -528,4 +532,3 @@ export function ChatMessageItem({
     </div>
   );
 }
-

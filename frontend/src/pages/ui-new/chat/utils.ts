@@ -40,6 +40,31 @@ export function extractMentions(content: string): Set<string> {
   return mentions;
 }
 
+const sendMessageDirectiveRegex =
+  /\[sendMessageTo@@(?:\{([^}\]]+)\}|([^\]\s]+))\]/g;
+
+function isValidDirectiveTarget(target: string): boolean {
+  if (!target) return false;
+  return [...target].every((char) => {
+    if (char === '_' || char === '-') return true;
+    return /[\p{L}\p{N}]/u.test(char);
+  });
+}
+
+export function renderSendMessageDirectives(content: string): string {
+  return content.replace(
+    sendMessageDirectiveRegex,
+    (fullMatch, rawTargetWithBrace: string, rawTargetNoBrace: string) => {
+      const rawTarget = rawTargetWithBrace ?? rawTargetNoBrace ?? '';
+      const target = rawTarget.trim();
+      if (!isValidDirectiveTarget(target)) return fullMatch;
+      // Render as disabled in-app link to get consistent blue styling.
+      const anchor = `#session-agent-${encodeURIComponent(target)}`;
+      return `[${target}](${anchor})`;
+    }
+  );
+}
+
 export function extractRunId(meta: unknown): string | null {
   if (!meta || typeof meta !== 'object') return null;
   const runId = (meta as { run_id?: unknown }).run_id;
@@ -463,7 +488,11 @@ export function validateWorkspacePath(path: string): string | null {
     return 'Workspace path is required.';
   }
 
-  if (trimmed.includes('\0')) {
+  const hasControlChars = [...trimmed].some((char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return code <= 0x1f || code === 0x7f;
+  });
+  if (hasControlChars) {
     return 'Workspace path contains invalid characters.';
   }
 
@@ -471,6 +500,51 @@ export function validateWorkspacePath(path: string): string | null {
   const segments = normalized.split('/').filter((segment) => segment.length > 0);
   if (segments.includes('..')) {
     return "Workspace path cannot contain '..'.";
+  }
+
+  const isWindowsLikePath =
+    trimmed.includes('\\') || /^[a-zA-Z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\');
+
+  if (isWindowsLikePath) {
+    const windowsReservedNames = new Set([
+      'CON',
+      'PRN',
+      'AUX',
+      'NUL',
+      'COM1',
+      'COM2',
+      'COM3',
+      'COM4',
+      'COM5',
+      'COM6',
+      'COM7',
+      'COM8',
+      'COM9',
+      'LPT1',
+      'LPT2',
+      'LPT3',
+      'LPT4',
+      'LPT5',
+      'LPT6',
+      'LPT7',
+      'LPT8',
+      'LPT9',
+    ]);
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const isDrivePrefix = index === 0 && /^[a-zA-Z]:$/.test(segment);
+      if (isDrivePrefix) continue;
+
+      if (/[<>:"|?*]/.test(segment)) {
+        return 'Workspace path contains invalid Windows filename characters.';
+      }
+
+      const reservedCheck = segment.trim().replace(/\.+$/, '').toUpperCase();
+      if (windowsReservedNames.has(reservedCheck)) {
+        return `Workspace path contains reserved Windows name: ${segment}`;
+      }
+    }
   }
 
   return null;

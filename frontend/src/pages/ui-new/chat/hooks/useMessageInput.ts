@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatAgent, ChatMessage } from 'shared/types';
-import { mentionRegex } from '../constants';
+import {
+  isMentionAllAlias,
+  mentionAllAliases,
+  mentionAllKeyword,
+  mentionRegex,
+} from '../constants';
 import { extractMentions } from '../utils';
 
 export interface UseMessageInputResult {
@@ -10,6 +15,7 @@ export interface UseMessageInputResult {
   setSelectedMentions: React.Dispatch<React.SetStateAction<string[]>>;
   mentionQuery: string | null;
   setMentionQuery: React.Dispatch<React.SetStateAction<string | null>>;
+  showMentionAllSuggestion: boolean;
   replyToMessage: ChatMessage | null;
   setReplyToMessage: React.Dispatch<React.SetStateAction<ChatMessage | null>>;
   inputRef: React.RefObject<HTMLTextAreaElement>;
@@ -96,19 +102,30 @@ export function useMessageInput(
     );
   }, [mentionAgents, mentionQuery]);
 
+  const showMentionAllSuggestion = useMemo(() => {
+    if (mentionQuery === null) return false;
+    const query = mentionQuery.trim().toLowerCase();
+    if (!query) return true;
+    return mentionAllAliases.some((alias) =>
+      alias.toLowerCase().startsWith(query)
+    ) || isMentionAllAlias(query) || mentionAllKeyword.startsWith(query);
+  }, [mentionQuery]);
+
   // Handle keyboard navigation for mention suggestions
   // Returns true if the event was handled (should prevent default behavior)
   const handleMentionKeyDown = useCallback(
     (event: React.KeyboardEvent): boolean => {
       // Only handle when mention suggestions are visible
-      if (mentionQuery === null || visibleMentionSuggestions.length === 0) {
+      const totalSuggestionCount =
+        visibleMentionSuggestions.length + (showMentionAllSuggestion ? 1 : 0);
+      if (mentionQuery === null || totalSuggestionCount === 0) {
         return false;
       }
 
       if (event.key === 'ArrowDown') {
         event.preventDefault();
         setHighlightedMentionIndex((prev) =>
-          prev < visibleMentionSuggestions.length - 1 ? prev + 1 : 0
+          prev < totalSuggestionCount - 1 ? prev + 1 : 0
         );
         return true;
       }
@@ -116,14 +133,19 @@ export function useMessageInput(
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         setHighlightedMentionIndex((prev) =>
-          prev > 0 ? prev - 1 : visibleMentionSuggestions.length - 1
+          prev > 0 ? prev - 1 : totalSuggestionCount - 1
         );
         return true;
       }
 
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        const selectedAgent = visibleMentionSuggestions[highlightedMentionIndex];
+        if (showMentionAllSuggestion && highlightedMentionIndex === 0) {
+          handleMentionSelect(mentionAllKeyword);
+          return true;
+        }
+        const agentIndex = highlightedMentionIndex - (showMentionAllSuggestion ? 1 : 0);
+        const selectedAgent = visibleMentionSuggestions[agentIndex];
         if (selectedAgent) {
           handleMentionSelect(selectedAgent.name);
         }
@@ -139,7 +161,13 @@ export function useMessageInput(
 
       return false;
     },
-    [mentionQuery, visibleMentionSuggestions, highlightedMentionIndex, handleMentionSelect]
+    [
+      mentionQuery,
+      visibleMentionSuggestions,
+      showMentionAllSuggestion,
+      highlightedMentionIndex,
+      handleMentionSelect,
+    ]
   );
 
   const agentOptions = useMemo(
@@ -159,6 +187,7 @@ export function useMessageInput(
     }
     setSelectedMentions((prev) =>
       prev.filter((mention) =>
+        mention === mentionAllKeyword ||
         mentionAgents.some((agent) => agent.name === mention)
       )
     );
@@ -179,6 +208,7 @@ export function useMessageInput(
     setSelectedMentions,
     mentionQuery,
     setMentionQuery,
+    showMentionAllSuggestion,
     replyToMessage,
     setReplyToMessage,
     inputRef,

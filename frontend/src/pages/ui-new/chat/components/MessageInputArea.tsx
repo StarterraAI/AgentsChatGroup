@@ -19,6 +19,7 @@ import {
   getAgentAvatarSeed,
   getAgentAvatarStyle,
 } from '../AgentAvatar';
+import { mentionAllKeyword } from '../constants';
 
 const allowedAttachmentExtensions = [
   '.txt', '.csv', '.md', '.json', '.xml', '.yaml', '.yml',
@@ -51,6 +52,7 @@ export interface MessageInputAreaProps {
   agentOptions: { value: string; label: string }[];
   mentionAgentsCount: number;
   mentionQuery: string | null;
+  showMentionAllSuggestion: boolean;
   visibleMentionSuggestions: ChatAgent[];
   highlightedMentionIndex: number;
   onMentionSelect: (name: string) => void;
@@ -91,6 +93,7 @@ export function MessageInputArea({
   agentOptions,
   mentionAgentsCount,
   mentionQuery,
+  showMentionAllSuggestion,
   visibleMentionSuggestions,
   highlightedMentionIndex,
   onMentionSelect,
@@ -116,6 +119,13 @@ export function MessageInputArea({
 }: MessageInputAreaProps) {
   const { t } = useTranslation('chat');
   const { t: tCommon } = useTranslation('common');
+  const mentionSuggestionEntries = [
+    ...(showMentionAllSuggestion ? [{ type: 'all' as const }] : []),
+    ...visibleMentionSuggestions.map((agent) => ({
+      type: 'agent' as const,
+      agent,
+    })),
+  ];
 
   return (
     <div className="chat-session-input-area p-base space-y-base shrink-0">
@@ -143,7 +153,9 @@ export function MessageInputArea({
                 variant="secondary"
                 className="chat-session-selected-mention flex items-center gap-half px-2 py-0.5"
               >
-                @{mention}
+                {mention === mentionAllKeyword
+                  ? t('input.mentionAllBadge')
+                  : `@${mention}`}
                 <button
                   type="button"
                   onClick={() =>
@@ -259,13 +271,23 @@ export function MessageInputArea({
           )}
         />
         {mentionQuery !== null &&
-          visibleMentionSuggestions.length > 0 && (
+          mentionSuggestionEntries.length > 0 && (
             <div className="chat-session-mention-suggestions absolute z-20 left-0 right-0 bottom-full mb-half border border-border rounded-sm shadow">
-              {visibleMentionSuggestions.map((agent, index) => (
+              {mentionSuggestionEntries.map((entry, index) => (
                 <button
-                  key={agent.id}
+                  key={
+                    entry.type === 'all'
+                      ? '__mention_all__'
+                      : entry.agent.id
+                  }
                   type="button"
-                  onClick={() => onMentionSelect(agent.name)}
+                  onClick={() =>
+                    onMentionSelect(
+                      entry.type === 'all'
+                        ? mentionAllKeyword
+                        : entry.agent.name
+                    )
+                  }
                   className={cn(
                     'chat-session-mention-option w-full px-base py-half text-left text-sm',
                     'flex items-center justify-between',
@@ -275,22 +297,35 @@ export function MessageInputArea({
                   )}
                 >
                   <span className="flex items-center gap-half min-w-0">
-                    <span
-                      className="chat-session-mention-avatar"
-                      style={getAgentAvatarStyle(
-                        getAgentAvatarSeed(
-                          agent.id,
-                          agent.runner_type,
-                          agent.name
-                        )
-                      )}
-                    >
-                      <AgentBrandIcon
-                        runnerType={agent.runner_type}
-                        className="chat-session-mention-avatar-logo"
-                      />
-                    </span>
-                    <span className="truncate">@{agent.name}</span>
+                    {entry.type === 'all' ? (
+                      <>
+                        <span className="chat-session-mention-avatar bg-panel border border-border text-xs font-semibold flex items-center justify-center">
+                          @
+                        </span>
+                        <span className="truncate">
+                          {t('input.mentionAllSuggestion')}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          className="chat-session-mention-avatar"
+                          style={getAgentAvatarStyle(
+                            getAgentAvatarSeed(
+                              entry.agent.id,
+                              entry.agent.runner_type,
+                              entry.agent.name
+                            )
+                          )}
+                        >
+                          <AgentBrandIcon
+                            runnerType={entry.agent.runner_type}
+                            className="chat-session-mention-avatar-logo"
+                          />
+                        </span>
+                        <span className="truncate">@{entry.agent.name}</span>
+                      </>
+                    )}
                   </span>
                   <CaretRightIcon
                     className={cn(
