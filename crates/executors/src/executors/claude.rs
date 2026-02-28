@@ -410,6 +410,9 @@ pub struct ClaudeLogProcessor {
     main_model_name: Option<String>,
     main_model_context_window: u32,
     context_tokens_used: u32,
+    input_tokens: u32,
+    output_tokens: u32,
+    cache_read_tokens: u32,
 }
 
 impl ClaudeLogProcessor {
@@ -429,6 +432,9 @@ impl ClaudeLogProcessor {
             last_assistant_message: None,
             main_model_context_window: DEFAULT_CLAUDE_CONTEXT_WINDOW,
             context_tokens_used: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
         }
     }
 
@@ -1328,12 +1334,16 @@ impl ClaudeLogProcessor {
                     if parent_tool_use_id.is_none()
                         && let Some(usage) = usage
                     {
-                        let input_tokens = usage.input_tokens.unwrap_or(0)
-                            + usage.cache_creation_input_tokens.unwrap_or(0)
-                            + usage.cache_read_input_tokens.unwrap_or(0);
+                        // 只统计实际计费token：input_tokens + output_tokens
+                        // cache_read_input_tokens 计费很低（约1/10），不计入总量
+                        let input_tokens = usage.input_tokens.unwrap_or(0);
                         let output_tokens = usage.output_tokens.unwrap_or(0);
+                        let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
                         let total_tokens = input_tokens + output_tokens;
                         self.context_tokens_used = total_tokens as u32;
+                        self.input_tokens = input_tokens as u32;
+                        self.output_tokens = output_tokens as u32;
+                        self.cache_read_tokens = cache_read as u32;
 
                         patches.push(self.add_token_usage_entry(entry_index_provider));
                     }
@@ -1552,6 +1562,10 @@ impl ClaudeLogProcessor {
             entry_type: NormalizedEntryType::TokenUsageInfo(crate::logs::TokenUsageInfo {
                 total_tokens: self.context_tokens_used,
                 model_context_window: self.main_model_context_window,
+                input_tokens: Some(self.input_tokens),
+                output_tokens: Some(self.output_tokens),
+                cache_read_tokens: Some(self.cache_read_tokens),
+                is_estimated: false,
             }),
             content: format!(
                 "Tokens used: {} / Context window: {}",

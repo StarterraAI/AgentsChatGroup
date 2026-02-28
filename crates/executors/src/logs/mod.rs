@@ -128,6 +128,14 @@ pub enum NormalizedEntryType {
 pub struct TokenUsageInfo {
     pub total_tokens: u32,
     pub model_context_window: u32,
+    #[serde(default)]
+    pub input_tokens: Option<u32>,
+    #[serde(default)]
+    pub output_tokens: Option<u32>,
+    #[serde(default)]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default)]
+    pub is_estimated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -29,7 +29,7 @@
   - Type generation: `src/bin/generate_types.rs`
 - `crates/services/`: Business logic
   - `chat.rs`: Message parsing, mentions, attachments
-  - `chat_runner.rs`: Agent execution orchestration, WebSocket streaming
+  - `chat_runner.rs`: Agent execution orchestration, WebSocket streaming, workspace-scoped chat context/run artifacts
 - `crates/executors/`, `crates/utils/`, `crates/deployment/`, `crates/local-deployment/`, `crates/git/`, `crates/review/`: Supporting crates
 
 ### Frontend
@@ -99,6 +99,16 @@ The chat system uses 7 core entities:
 3. User sends message → API → mention parsing → DB
 4. Agent executes → chat_runner orchestrates → WebSocket streams events
 5. Run artifacts captured → stored with diffs/logs
+
+### Runtime Storage (Workspace-Scoped)
+- Agents are restricted to their configured workspace path for file access.
+- Chat context file path:
+  - `<workspace>/.agents_chatgroup/context/<session_id>/messages.jsonl`
+- Chat run records path:
+  - `<workspace>/.agents_chatgroup/runs/<session_id>/run_records/...`
+- Per-run context snapshot path:
+  - `<run_dir>/context.jsonl`
+- Internal `.agents_chatgroup/` files should be treated as runtime artifacts, not user source files.
 
 ## Design System Status
 

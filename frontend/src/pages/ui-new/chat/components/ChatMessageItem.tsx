@@ -487,16 +487,18 @@ export function ChatMessageItem({
                 typeof meta === 'object' &&
                 !Array.isArray(meta) &&
                 'token_usage' in meta
-                  ? (meta as { token_usage?: { total_tokens?: number } })
+                  ? (meta as { token_usage?: { total_tokens?: number; is_estimated?: boolean } })
                       .token_usage
                   : null;
               const tokenCount =
                 typeof tokenUsage?.total_tokens === 'number'
                   ? tokenUsage.total_tokens
                   : null;
+              const isEstimated = tokenUsage?.is_estimated === true;
               return tokenCount !== null ? (
                 <div className="chat-session-message-tokens flex justify-end mt-1">
                   <span className="text-xs text-low opacity-60">
+                    {isEstimated && <span className="text-yellow-500 mr-0.5">~</span>}
                     {t('message.replyTokenUsage', {
                       value: formatTokenCount(tokenCount),
                     })}

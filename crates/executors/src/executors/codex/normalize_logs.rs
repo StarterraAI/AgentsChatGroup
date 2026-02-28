@@ -1012,6 +1012,10 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                                             .model_context_window
                                             .unwrap_or_default()
                                             as u32,
+                                        input_tokens: None,
+                                        output_tokens: None,
+                                        cache_read_tokens: None,
+                                        is_estimated: false,
                                     },
                                 ),
                                 content: format!(

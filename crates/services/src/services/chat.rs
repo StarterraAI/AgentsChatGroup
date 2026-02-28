@@ -878,7 +878,11 @@ pub async fn compress_messages_if_needed(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_mentions;
+    use super::{
+        CompressionType, SimplifiedMessage, compress_messages_if_needed, parse_mentions,
+    };
+    use sqlx::SqlitePool;
+    use uuid::Uuid;
 
     #[test]
     fn parses_mentions_with_basic_tokens() {
@@ -911,5 +915,101 @@ mod tests {
                 "\u{0645}\u{0637}\u{0648}\u{0631}_1",
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn compress_messages_falls_back_to_truncation_without_agents() {
+        if dirs::data_dir().is_none() {
+            return;
+        }
+
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        let session_id = Uuid::new_v4();
+        let workspace = std::path::Path::new(".");
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "A very long message that should exceed tiny threshold quickly".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "Second long message for compression coverage".repeat(8),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "user:bob".to_string(),
+                content: "Recent message to keep".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "Another recent message to keep".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let result = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages.clone(),
+            1,   // force compression
+            50,  // compress half
+            &[], // no agents available
+            workspace,
+        )
+        .await
+        .expect("compression should succeed with fallback");
+
+        assert_eq!(result.compression_type, CompressionType::Truncated);
+        assert_eq!(result.messages.len(), 2);
+
+        let warning = result.warning.expect("fallback should include warning");
+        assert_eq!(warning.code, "COMPRESSION_FALLBACK");
+        assert!(
+            std::path::Path::new(&warning.split_file_path).exists(),
+            "split file should be created"
+        );
+
+        let _ = tokio::fs::remove_file(&warning.split_file_path).await;
+    }
+
+    #[tokio::test]
+    async fn compress_messages_keeps_original_when_under_threshold() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        let session_id = Uuid::new_v4();
+        let workspace = std::path::Path::new(".");
+        let messages = vec![
+            SimplifiedMessage {
+                sender: "user:alice".to_string(),
+                content: "short message".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+            SimplifiedMessage {
+                sender: "agent:bot".to_string(),
+                content: "another short one".to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        ];
+
+        let result = compress_messages_if_needed(
+            &pool,
+            session_id,
+            messages.clone(),
+            u32::MAX, // never trigger compression
+            25,
+            &[],
+            workspace,
+        )
+        .await
+        .expect("compression should pass");
+
+        assert_eq!(result.compression_type, CompressionType::None);
+        assert_eq!(result.messages.len(), messages.len());
+        assert!(result.warning.is_none());
     }
 }

@@ -24,8 +24,8 @@ use executors::{
     approvals::NoopExecutorApprovalService,
     env::{ExecutionEnv, RepoContext},
     executors::{
-        BaseCodingAgent, CancellationToken, CodingAgent, ExecutorError, ExecutorExitSignal,
-        StandardCodingAgentExecutor, codex::SandboxMode as CodexSandboxMode,
+        BaseCodingAgent, CancellationToken, ExecutorError, ExecutorExitSignal,
+        StandardCodingAgentExecutor,
     },
     logs::{
         NormalizedEntryType, TokenUsageInfo, utils::patch::extract_normalized_entry_from_patch,
@@ -51,7 +51,7 @@ use crate::services::chat::{self, ChatServiceError};
 const UNTRACKED_FILE_LIMIT: u64 = 1024 * 1024;
 const MAX_AGENT_CHAIN_DEPTH: u32 = 5;
 const AGENTS_CHATGROUP_HOME_DIR: &str = ".agents-chatgroup";
-const AGENTS_CHATGROUP_DATA_DIR: &str = "data";
+const AGENTS_CHATGROUP_WORKSPACE_DIR: &str = ".agents_chatgroup";
 const RUNS_DIR_NAME: &str = "runs";
 const CONTEXT_DIR_NAME: &str = "context";
 const RUN_RECORDS_DIR_NAME: &str = "run_records";
@@ -746,8 +746,15 @@ impl ChatRunner {
                 .clone()
                 .unwrap_or_else(|| self.build_workspace_path(session_id, agent_id));
             fs::create_dir_all(&workspace_path).await?;
-            let run_records_dir = Self::chat_run_records_dir(session_id);
+            let run_records_dir =
+                Self::workspace_run_records_dir(PathBuf::from(&workspace_path).as_path(), session_id);
             fs::create_dir_all(&run_records_dir).await?;
+            tracing::info!(
+                session_id = %session_id,
+                workspace_path = %workspace_path,
+                runs_dir = %run_records_dir.display(),
+                "Using workspace runs directory"
+            );
 
             let run_index = ChatRun::next_run_index(&self.db.pool, session_agent_id).await?;
             let run_id = Uuid::new_v4();
@@ -813,11 +820,6 @@ impl ChatRunner {
             let executor_profile_id = self.parse_executor_profile_id(&agent)?;
             let mut executor =
                 ExecutorConfigs::get_cached().get_coding_agent_or_default(&executor_profile_id);
-            Self::configure_executor_for_shared_context_access(
-                &mut executor,
-                PathBuf::from(&workspace_path).as_path(),
-                &context_snapshot.workspace_path,
-            );
             executor.use_approvals(Arc::new(NoopExecutorApprovalService));
 
             let repo_context = RepoContext::new(PathBuf::from(&workspace_path), Vec::new());
@@ -941,52 +943,19 @@ impl ChatRunner {
             .to_string()
     }
 
-    fn chat_data_root() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from(r"C:\Users\Admin"))
-            .join(AGENTS_CHATGROUP_HOME_DIR)
-            .join(AGENTS_CHATGROUP_DATA_DIR)
+    fn workspace_runs_dir(workspace_path: &Path, session_id: Uuid) -> PathBuf {
+        workspace_path
+            .join(AGENTS_CHATGROUP_WORKSPACE_DIR)
+            .join(RUNS_DIR_NAME)
+            .join(session_id.to_string())
     }
 
-    fn chat_storage_root(session_id: Uuid) -> PathBuf {
-        Self::chat_data_root().join(session_id.to_string())
-    }
-
-    fn chat_runs_dir(session_id: Uuid) -> PathBuf {
-        Self::chat_storage_root(session_id).join(RUNS_DIR_NAME)
-    }
-
-    fn chat_run_records_dir(session_id: Uuid) -> PathBuf {
-        Self::chat_runs_dir(session_id).join(RUN_RECORDS_DIR_NAME)
-    }
-
-    fn chat_context_dir(session_id: Uuid) -> PathBuf {
-        Self::chat_storage_root(session_id).join(CONTEXT_DIR_NAME)
+    fn workspace_run_records_dir(workspace_path: &Path, session_id: Uuid) -> PathBuf {
+        Self::workspace_runs_dir(workspace_path, session_id).join(RUN_RECORDS_DIR_NAME)
     }
 
     fn run_records_prefix(session_agent_id: Uuid, run_index: i64) -> String {
         format!("session_agent_{session_agent_id}_run_{run_index:04}")
-    }
-
-    fn configure_executor_for_shared_context_access(
-        executor: &mut CodingAgent,
-        workspace_path: &Path,
-        context_path: &Path,
-    ) {
-        if context_path.strip_prefix(workspace_path).is_ok() {
-            return;
-        }
-
-        if let CodingAgent::Codex(codex) = executor
-            && !matches!(codex.sandbox, Some(CodexSandboxMode::DangerFullAccess))
-        {
-            codex.sandbox = Some(CodexSandboxMode::DangerFullAccess);
-            tracing::info!(
-                workspace_path = %workspace_path.display(),
-                context_path = %context_path.display(),
-                "Enabled Codex DangerFullAccess so agent can read shared chat context path"
-            );
-        }
     }
 
     fn parse_runner_type(&self, agent: &ChatAgent) -> Result<BaseCodingAgent, ChatRunnerError> {
@@ -1140,6 +1109,9 @@ impl ChatRunner {
             if rel == AGENTS_CHATGROUP_HOME_DIR
                 || rel.starts_with(&format!("{AGENTS_CHATGROUP_HOME_DIR}/"))
                 || rel.starts_with(&format!("{AGENTS_CHATGROUP_HOME_DIR}\\"))
+                || rel == AGENTS_CHATGROUP_WORKSPACE_DIR
+                || rel.starts_with(&format!("{AGENTS_CHATGROUP_WORKSPACE_DIR}/"))
+                || rel.starts_with(&format!("{AGENTS_CHATGROUP_WORKSPACE_DIR}\\"))
             {
                 // Skip internal runtime artifacts generated by chat context snapshots.
                 continue;
@@ -1206,7 +1178,10 @@ impl ChatRunner {
         let compression_warning = compacted.compression_warning;
         let jsonl = compacted.jsonl;
 
-        let context_dir = Self::chat_context_dir(session_id);
+        let context_dir = PathBuf::from(workspace_path)
+            .join(AGENTS_CHATGROUP_WORKSPACE_DIR)
+            .join(CONTEXT_DIR_NAME)
+            .join(session_id.to_string());
         fs::create_dir_all(&context_dir).await?;
         let context_path = context_dir.join("messages.jsonl");
         fs::write(&context_path, jsonl.as_bytes()).await?;
@@ -1214,7 +1189,7 @@ impl ChatRunner {
             session_id = %session_id,
             workspace_path = %workspace_path,
             context_path = %context_path.display(),
-            "Using shared context"
+            "Using workspace context"
         );
 
         fs::create_dir_all(run_dir).await?;
@@ -1639,6 +1614,10 @@ impl ChatRunner {
             return Some(TokenUsageInfo {
                 total_tokens,
                 model_context_window,
+                input_tokens: None,
+                output_tokens: None,
+                cache_read_tokens: None,
+                is_estimated: false,
             });
         }
 
@@ -1665,6 +1644,10 @@ impl ChatRunner {
         Some(TokenUsageInfo {
             total_tokens,
             model_context_window,
+            input_tokens: None,
+            output_tokens: None,
+            cache_read_tokens: None,
+            is_estimated: false,
         })
     }
 
@@ -1706,6 +1689,19 @@ impl ChatRunner {
             *last_token_usage = Some(usage);
         }
         stdout_line_buffer.clear();
+    }
+
+    /// 使用tiktoken估算文本的token数量
+    fn estimate_tokens_with_tiktoken(text: &str) -> u32 {
+        use tiktoken_rs::cl100k_base;
+
+        match cl100k_base() {
+            Ok(bpe) => bpe.encode_with_special_tokens(text).len() as u32,
+            Err(_) => {
+                // fallback: 约4个字符一个token
+                (text.len() / 4) as u32
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1948,12 +1944,34 @@ impl ChatRunner {
                             "chain_depth": chain_depth + 1,
                         });
 
-                        if let Some(ref usage) = last_token_usage {
-                            meta["token_usage"] = serde_json::json!({
-                                "total_tokens": usage.total_tokens,
-                                "model_context_window": usage.model_context_window,
-                            });
-                        }
+                        // 如果没有token_usage，使用tiktoken估算
+                        let token_usage = if let Some(ref usage) = last_token_usage {
+                            usage.clone()
+                        } else {
+                            // 读取input prompt进行估算
+                            let input_path = run_dir.join("input.txt");
+                            let prompt_content = fs::read_to_string(&input_path)
+                                .await
+                                .unwrap_or_default();
+                            let estimated_input = Self::estimate_tokens_with_tiktoken(&prompt_content);
+                            let estimated_output = Self::estimate_tokens_with_tiktoken(&latest_assistant);
+                            TokenUsageInfo {
+                                total_tokens: estimated_input + estimated_output,
+                                model_context_window: 0,
+                                input_tokens: Some(estimated_input),
+                                output_tokens: Some(estimated_output),
+                                cache_read_tokens: None,
+                                is_estimated: true,
+                            }
+                        };
+
+                        meta["token_usage"] = serde_json::json!({
+                            "total_tokens": token_usage.total_tokens,
+                            "model_context_window": token_usage.model_context_window,
+                            "input_tokens": token_usage.input_tokens,
+                            "output_tokens": token_usage.output_tokens,
+                            "is_estimated": token_usage.is_estimated,
+                        });
 
                         if context_compacted {
                             meta["context_compacted"] = true.into();
