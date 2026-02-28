@@ -13,6 +13,9 @@ export interface ConfirmModalProps {
   title: string;
   message: string;
   isLoading: boolean;
+  mode?: 'confirm' | 'alert';
+  confirmText?: string;
+  cancelText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -22,10 +25,20 @@ export function ConfirmModal({
   title,
   message,
   isLoading,
+  mode = 'confirm',
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'common']);
+  const isAlert = mode === 'alert';
+  const resolvedConfirmText = isLoading
+    ? t('modals.confirm.processing')
+    : confirmText ??
+      (isAlert ? t('common:ok') : t('modals.confirm.confirm'));
+  const resolvedCancelText = cancelText ?? t('modals.confirm.cancel');
+
   return (
     <Dialog
       className="chat-session-modal-surface"
@@ -43,15 +56,17 @@ export function ConfirmModal({
         <p className="text-sm text-normal">{message}</p>
       </DialogContent>
       <DialogFooter>
-        <PrimaryButton
-          variant="tertiary"
-          value={t('modals.confirm.cancel')}
-          onClick={onCancel}
-          disabled={isLoading}
-        />
+        {!isAlert && (
+          <PrimaryButton
+            variant="tertiary"
+            value={resolvedCancelText}
+            onClick={onCancel}
+            disabled={isLoading}
+          />
+        )}
         <PrimaryButton
           variant="default"
-          value={isLoading ? t('modals.confirm.processing') : t('modals.confirm.confirm')}
+          value={resolvedConfirmText}
           onClick={onConfirm}
           disabled={isLoading}
         />

@@ -178,13 +178,15 @@
         "agentRunning": "Agent en cours d'exécution",
         "removeMember": "Supprimer le membre IA",
         "deleteSession": "Supprimer la session",
-        "deleteMessages": "Supprimer les messages"
+        "deleteMessages": "Supprimer les messages",
+        "duplicateMemberName": "Nom de membre en double"
       },
       "messages": {
         "agentRunning": "Le(s) agent(s) suivant(s) est/sont en cours d’exécution : @{{agents}}. Ils ne traiteront pas de nouveaux messages tant que la tâche en cours ne sera pas arrêtée. Voulez-vous quand même envoyer ce message ?",
         "removeMember": "Voulez-vous vraiment supprimer @{{name}} de cette session ?",
         "deleteSession": "Voulez-vous vraiment supprimer \"{{title}}\" ? Cette action est irréversible et tous les messages seront supprimés définitivement.",
-        "deleteMessages": "Voulez-vous vraiment supprimer {{count}} message(s) ? Cette action est irréversible."
+        "deleteMessages": "Voulez-vous vraiment supprimer {{count}} message(s) ? Cette action est irréversible.",
+        "duplicateMemberName": "Le membre IA {{name}} existe deja dans cette session. Les noms en double ne sont pas autorises."
       }
     },
     "promptEditor": {

@@ -1,7 +1,6 @@
 import { parseDiffStats } from '@/utils/diffStatsParser';
 import type { TFunction } from 'i18next';
 import type {
-  ChatAgent,
   ChatMemberPreset,
   ChatTeamPreset,
   JsonValue,
@@ -458,6 +457,25 @@ export function getSessionWorkspacePath(
   return `chat/session_${sessionId}/agents/${agentName}`;
 }
 
+export function validateWorkspacePath(path: string): string | null {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return 'Workspace path is required.';
+  }
+
+  if (trimmed.includes('\0')) {
+    return 'Workspace path contains invalid characters.';
+  }
+
+  const normalized = trimmed.replace(/\\/g, '/');
+  const segments = normalized.split('/').filter((segment) => segment.length > 0);
+  if (segments.includes('..')) {
+    return "Workspace path cannot contain '..'.";
+  }
+
+  return null;
+}
+
 export type MemberPresetImportAction = 'create' | 'reuse' | 'skip';
 
 export interface MemberPresetImportPlan {
@@ -506,7 +524,6 @@ export function getLocalizedMemberPresetNameById(
 export function buildMemberPresetImportPlan({
   preset,
   sessionId,
-  existingAgents,
   sessionMembers,
   defaultRunnerType,
   enabledRunnerTypes,
@@ -515,7 +532,6 @@ export function buildMemberPresetImportPlan({
 }: {
   preset: ChatMemberPreset;
   sessionId: string;
-  existingAgents: ChatAgent[];
   sessionMembers: SessionMember[];
   defaultRunnerType: string | null | undefined;
   enabledRunnerTypes: string[];
@@ -537,38 +553,23 @@ export function buildMemberPresetImportPlan({
     : preset.id;
   const systemPrompt = preset.system_prompt?.trim() ?? '';
   const toolsEnabled = normalizePresetToolsEnabled(preset.tools_enabled);
-  const sessionAgentIds = new Set(sessionMembers.map((item) => item.agent.id));
-
-  const sameNameAgents = existingAgents.filter(
-    (agent) => agent.name.toLowerCase() === presetName.toLowerCase()
+  const hasSameNameInSession = sessionMembers.some(
+    (member) => member.agent.name.toLowerCase() === presetName.toLowerCase()
   );
-  const reusableAgent = sameNameAgents.find(
-    (agent) =>
-      agent.runner_type === runnerType &&
-      (agent.system_prompt ?? '') === systemPrompt &&
-      areToolsEnabledEqual(agent.tools_enabled, toolsEnabled)
-  );
-
-  if (reusableAgent) {
-    const action: MemberPresetImportAction = sessionAgentIds.has(reusableAgent.id)
-      ? 'skip'
-      : 'reuse';
+  if (hasSameNameInSession) {
     return {
       presetId: preset.id,
       presetName: preset.name,
       runnerType,
-      finalName: reusableAgent.name,
+      finalName: presetName,
       systemPrompt,
       toolsEnabled,
-      action,
-      reason:
-        action === 'skip'
-          ? 'already-in-session'
-          : 'reuse-existing-agent',
-      agentId: reusableAgent.id,
+      action: 'skip',
+      reason: 'duplicate-name-in-session',
+      agentId: null,
       workspacePath:
         preset.default_workspace_path?.trim() ||
-        getSessionWorkspacePath(sessionId, reusableAgent.name),
+        getSessionWorkspacePath(sessionId, presetName),
     };
   }
 

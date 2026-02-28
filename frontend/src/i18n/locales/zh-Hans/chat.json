@@ -178,13 +178,15 @@
         "agentRunning": "Agent 正在运行",
         "removeMember": "移除 AI 成员",
         "deleteSession": "删除会话",
-        "deleteMessages": "删除消息"
+        "deleteMessages": "删除消息",
+        "duplicateMemberName": "成员名称不可重复"
       },
       "messages": {
         "agentRunning": "以下 Agent 正在运行：@{{agents}}。在当前任务停止前，它们不会处理新消息。仍要发送这条消息吗？",
         "removeMember": "确定要将 @{{name}} 从此会话中移除吗？",
         "deleteSession": "确定要删除“{{title}}”吗？此操作无法撤销，所有消息将被永久删除。",
-        "deleteMessages": "确定要删除 {{count}} 条消息吗？此操作无法撤销。"
+        "deleteMessages": "确定要删除 {{count}} 条消息吗？此操作无法撤销。",
+        "duplicateMemberName": "当前会话中已存在成员 {{name}}，不允许重复添加。"
       }
     },
     "promptEditor": {

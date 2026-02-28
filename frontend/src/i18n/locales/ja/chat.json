@@ -178,13 +178,15 @@
         "agentRunning": "エージェント実行中",
         "removeMember": "AIメンバーを削除",
         "deleteSession": "セッションを削除",
-        "deleteMessages": "メッセージを削除"
+        "deleteMessages": "メッセージを削除",
+        "duplicateMemberName": "メンバー名が重複しています"
       },
       "messages": {
         "agentRunning": "次のエージェントが実行中です: @{{agents}}。現在のタスクを停止するまで新しいメッセージは処理されません。それでもこのメッセージを送信しますか？",
         "removeMember": "@{{name}} をこのセッションから削除してもよろしいですか？",
         "deleteSession": "「{{title}}」を削除してもよろしいですか？この操作は元に戻せず、すべてのメッセージが完全に削除されます。",
-        "deleteMessages": "{{count}} 件のメッセージを削除してもよろしいですか？この操作は元に戻せません。"
+        "deleteMessages": "{{count}} 件のメッセージを削除してもよろしいですか？この操作は元に戻せません。",
+        "duplicateMemberName": "このセッションには AI メンバー {{name}} が既に存在します。重複名は追加できません。"
       }
     },
     "promptEditor": {

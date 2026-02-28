@@ -1,3 +1,5 @@
+use std::path::{Component, PathBuf};
+
 use axum::{
     Extension, Json,
     extract::{
@@ -78,6 +80,60 @@ pub struct UpdateChatSessionAgentRequest {
     pub workspace_path: Option<String>,
 }
 
+fn normalize_workspace_path(workspace_path: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(raw_path) = workspace_path else {
+        return Ok(None);
+    };
+
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Workspace path is required.".to_string(),
+        ));
+    }
+
+    if trimmed.chars().any(|ch| ch == '\0') {
+        return Err(ApiError::BadRequest(
+            "Workspace path contains invalid characters.".to_string(),
+        ));
+    }
+
+    let parsed_path = PathBuf::from(trimmed);
+    if parsed_path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(ApiError::BadRequest(
+            "Workspace path cannot contain '..'.".to_string(),
+        ));
+    }
+
+    Ok(Some(trimmed.to_string()))
+}
+
+async fn session_has_duplicate_member_name(
+    pool: &sqlx::SqlitePool,
+    session_id: Uuid,
+    agent_id: Uuid,
+    agent_name: &str,
+) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(1)
+           FROM chat_session_agents session_agents
+           JOIN chat_agents agents ON agents.id = session_agents.agent_id
+           WHERE session_agents.session_id = ?1
+             AND session_agents.agent_id != ?2
+             AND lower(trim(agents.name)) = lower(trim(?3))"#,
+    )
+    .bind(session_id)
+    .bind(agent_id)
+    .bind(agent_name)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(count > 0)
+}
+
 pub async fn get_session_agents(
     Extension(session): Extension<ChatSession>,
     State(deployment): State<DeploymentImpl>,
@@ -95,6 +151,8 @@ pub async fn create_session_agent(
         return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
+    let workspace_path = normalize_workspace_path(payload.workspace_path)?;
+
     if let Some(existing) = ChatSessionAgent::find_by_session_and_agent(
         &deployment.db().pool,
         session.id,
@@ -102,11 +160,11 @@ pub async fn create_session_agent(
     )
     .await?
     {
-        if payload.workspace_path.is_some() {
+        if workspace_path.is_some() {
             let updated = ChatSessionAgent::update_workspace_path(
                 &deployment.db().pool,
                 existing.id,
-                payload.workspace_path,
+                workspace_path,
             )
             .await?;
             return Ok(ResponseJson(ApiResponse::success(updated)));
@@ -126,12 +184,25 @@ pub async fn create_session_agent(
         ));
     }
 
+    if session_has_duplicate_member_name(
+        &deployment.db().pool,
+        session.id,
+        payload.agent_id,
+        agent_name,
+    )
+    .await?
+    {
+        return Err(ApiError::BadRequest(
+            "An AI member with this name already exists in this session.".to_string(),
+        ));
+    }
+
     let created = ChatSessionAgent::create(
         &deployment.db().pool,
         &CreateChatSessionAgent {
             session_id: session.id,
             agent_id: payload.agent_id,
-            workspace_path: payload.workspace_path,
+            workspace_path,
         },
         Uuid::new_v4(),
     )
@@ -149,6 +220,8 @@ pub async fn update_session_agent(
         return Err(ApiError::Conflict("Chat session is archived".to_string()));
     }
 
+    let workspace_path = normalize_workspace_path(payload.workspace_path)?;
+
     let Some(existing) =
         ChatSessionAgent::find_by_id(&deployment.db().pool, session_agent_id).await?
     else {
@@ -163,12 +236,9 @@ pub async fn update_session_agent(
         ));
     }
 
-    let updated = ChatSessionAgent::update_workspace_path(
-        &deployment.db().pool,
-        existing.id,
-        payload.workspace_path,
-    )
-    .await?;
+    let updated =
+        ChatSessionAgent::update_workspace_path(&deployment.db().pool, existing.id, workspace_path)
+            .await?;
     Ok(ResponseJson(ApiResponse::success(updated)))
 }
 

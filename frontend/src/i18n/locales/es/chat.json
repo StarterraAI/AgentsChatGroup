@@ -178,13 +178,15 @@
         "agentRunning": "Agente en ejecución",
         "removeMember": "Eliminar miembro de IA",
         "deleteSession": "Eliminar sesión",
-        "deleteMessages": "Eliminar mensajes"
+        "deleteMessages": "Eliminar mensajes",
+        "duplicateMemberName": "Nombre de miembro duplicado"
       },
       "messages": {
         "agentRunning": "Los siguientes agentes se están ejecutando: @{{agents}}. No procesarán mensajes nuevos hasta que se detenga la tarea actual. ¿Aun así quieres enviar este mensaje?",
         "removeMember": "¿Seguro que quieres eliminar a @{{name}} de esta sesión?",
         "deleteSession": "¿Seguro que quieres eliminar \"{{title}}\"? Esta acción no se puede deshacer y todos los mensajes se eliminarán permanentemente.",
-        "deleteMessages": "¿Seguro que quieres eliminar {{count}} mensaje(s)? Esta acción no se puede deshacer."
+        "deleteMessages": "¿Seguro que quieres eliminar {{count}} mensaje(s)? Esta acción no se puede deshacer.",
+        "duplicateMemberName": "El miembro de IA {{name}} ya existe en esta sesion. No se permiten nombres duplicados."
       }
     },
     "promptEditor": {

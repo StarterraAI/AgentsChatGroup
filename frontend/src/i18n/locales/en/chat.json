@@ -178,13 +178,15 @@
         "agentRunning": "Agent Running",
         "removeMember": "Remove AI Member",
         "deleteSession": "Delete Session",
-        "deleteMessages": "Delete Messages"
+        "deleteMessages": "Delete Messages",
+        "duplicateMemberName": "Duplicate Member Name"
       },
       "messages": {
         "agentRunning": "The following agent(s) are currently running: @{{agents}}. They will not process new messages until the current task is stopped. Do you still want to send this message?",
         "removeMember": "Are you sure you want to remove @{{name}} from this session?",
         "deleteSession": "Are you sure you want to delete \"{{title}}\"? This action cannot be undone and all messages will be permanently deleted.",
-        "deleteMessages": "Are you sure you want to delete {{count}} message(s)? This action cannot be undone."
+        "deleteMessages": "Are you sure you want to delete {{count}} message(s)? This action cannot be undone.",
+        "duplicateMemberName": "AI member {{name}} already exists in this session. Duplicate names are not allowed."
       }
     },
     "promptEditor": {
