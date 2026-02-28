@@ -6,6 +6,7 @@ interface ChatMarkdownProps {
   content: string;
   maxWidth?: string;
   className?: string;
+  textClassName?: string;
   workspaceId?: string;
 }
 
@@ -13,16 +14,17 @@ export function ChatMarkdown({
   content,
   maxWidth = '800px',
   className,
+  textClassName = 'text-sm',
   workspaceId,
 }: ChatMarkdownProps) {
   const { viewFileInChanges, findMatchingDiffPath } = useChangesView();
 
   return (
-    <div className={cn('text-sm', className)} style={{ maxWidth }}>
+    <div className={className} style={{ maxWidth }}>
       <WYSIWYGEditor
         value={content}
         disabled
-        className="whitespace-pre-wrap break-words"
+        className={cn('whitespace-pre-wrap break-words', textClassName)}
         taskAttemptId={workspaceId}
         findMatchingDiffPath={findMatchingDiffPath}
         onCodeClick={viewFileInChanges}

@@ -20,7 +20,6 @@ export { ChatHeader } from './components/ChatHeader';
 export { CleanupModeBar } from './components/CleanupModeBar';
 export { ChatMessageItem } from './components/ChatMessageItem';
 export { RunningAgentPlaceholder } from './components/RunningAgentPlaceholder';
-export { StreamingRunEntry } from './components/StreamingRunEntry';
 export { MessageInputArea } from './components/MessageInputArea';
 export { AiMembersSidebar } from './components/AiMembersSidebar';
 export { WorkspaceDrawer } from './components/WorkspaceDrawer';

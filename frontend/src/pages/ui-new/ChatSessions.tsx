@@ -38,6 +38,7 @@ import {
   type SessionMember,
   type RunHistoryItem,
   type MentionStatus,
+  type StreamRun,
   useChatData,
   useRunHistory,
   useChatMutations,
@@ -70,7 +71,6 @@ import { ChatHeader } from './chat/components/ChatHeader';
 import { CleanupModeBar } from './chat/components/CleanupModeBar';
 import { ChatMessageItem } from './chat/components/ChatMessageItem';
 import { RunningAgentPlaceholder } from './chat/components/RunningAgentPlaceholder';
-import { StreamingRunEntry } from './chat/components/StreamingRunEntry';
 import { MessageInputArea } from './chat/components/MessageInputArea';
 import { AiMembersSidebar } from './chat/components/AiMembersSidebar';
 import { WorkspaceDrawer } from './chat/components/WorkspaceDrawer';
@@ -347,6 +347,7 @@ export function ChatSessions() {
     setAgentStates,
     setAgentStateInfos,
     setMentionStatuses,
+    pruneStreamingRunsForSession,
     clearCompressionWarning,
   } = useChatWebSocket(activeSessionId, handleIncomingMessage);
 
@@ -797,14 +798,28 @@ export function ChatSessions() {
     () => Object.keys(streamingRuns).length,
     [streamingRuns]
   );
+  const streamingRunAgentIds = useMemo(
+    () => new Set(Object.values(streamingRuns).map((run) => run.agentId)),
+    [streamingRuns]
+  );
+  const runByAgentId = useMemo<Map<string, StreamRun>>(() => {
+    const next = new Map<string, StreamRun>();
+    for (const run of Object.values(streamingRuns)) {
+      next.set(run.agentId, run);
+    }
+    return next;
+  }, [streamingRuns]);
 
   const placeholderAgents = useMemo(
     () =>
       sessionMembers.filter((member) => {
         const state = agentStates[member.agent.id] ?? member.sessionAgent.state;
-        return state === ChatSessionAgentState.running;
+        return (
+          state === ChatSessionAgentState.running ||
+          streamingRunAgentIds.has(member.agent.id)
+        );
       }),
-    [agentStates, sessionMembers]
+    [agentStates, sessionMembers, streamingRunAgentIds]
   );
 
   const activeWorkspaceAgent = workspaceAgentId
@@ -842,6 +857,38 @@ export function ChatSessions() {
     !isUploadingAttachments;
 
   const diffViewerRun = diffViewerRunId ? runDiffs[diffViewerRunId] : null;
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+
+    const completedRunIds = new Set<string>();
+    for (const message of messagesData) {
+      const runId = extractRunId(message.meta);
+      if (runId) {
+        completedRunIds.add(runId);
+      }
+    }
+
+    const runningAgentIds = new Set<string>();
+    for (const member of sessionMembers) {
+      const state = agentStates[member.agent.id] ?? member.sessionAgent.state;
+      if (state === ChatSessionAgentState.running) {
+        runningAgentIds.add(member.agent.id);
+      }
+    }
+
+    pruneStreamingRunsForSession(
+      activeSessionId,
+      completedRunIds,
+      runningAgentIds
+    );
+  }, [
+    activeSessionId,
+    agentStates,
+    messagesData,
+    pruneStreamingRunsForSession,
+    sessionMembers,
+  ]);
 
   // Check agent availability
   useEffect(() => {
@@ -2462,27 +2509,11 @@ export function ChatSessions() {
             <RunningAgentPlaceholder
               key={`placeholder-${member.agent.id}`}
               member={member}
+              run={runByAgentId.get(member.agent.id)}
               tone={getMessageTone(member.agent.id, false)}
               stateInfo={agentStateInfos[member.agent.id]}
               clock={clock}
               isStopping={stoppingAgents.has(member.agent.id)}
-              onStop={handleStopAgent}
-            />
-          ))}
-
-          {/* Streaming runs */}
-          {Object.entries(streamingRuns).map(([runId, run]) => (
-            <StreamingRunEntry
-              key={`stream-${runId}`}
-              runId={runId}
-              run={run}
-              agentName={agentById.get(run.agentId)?.name ?? 'Agent'}
-              runnerType={agentById.get(run.agentId)?.runner_type ?? null}
-              tone={getMessageTone(run.agentId, false)}
-              sessionAgent={sessionAgents.find(
-                (sa) => sa.agent_id === run.agentId
-              )}
-              isStopping={stoppingAgents.has(run.agentId)}
               onStop={handleStopAgent}
             />
           ))}
