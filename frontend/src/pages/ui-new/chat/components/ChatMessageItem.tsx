@@ -1,4 +1,4 @@
-import {
+﻿import {
   CheckCircleIcon,
   XCircleIcon,
   WarningCircleIcon,
@@ -134,7 +134,6 @@ export function ChatMessageItem({
     !Array.isArray(message.meta) &&
     (message.meta as { context_compacted?: unknown }).context_compacted ===
       true;
-
   // System messages
   if (message.sender_type === ChatSenderType.system) {
     return (
@@ -172,7 +171,7 @@ export function ChatMessageItem({
         >
           <span className="chat-session-context-compacted-separator-line" />
           <span className="chat-session-context-compacted-separator-text">
-            ----{t('message.contextCompressed')}---
+            {t('message.contextCompressed')}
           </span>
           <span className="chat-session-context-compacted-separator-line" />
         </div>
@@ -527,3 +526,4 @@ export function ChatMessageItem({
     </div>
   );
 }
+

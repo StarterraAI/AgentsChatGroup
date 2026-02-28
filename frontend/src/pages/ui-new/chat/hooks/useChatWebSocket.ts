@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type {
-  ChatMessage,
-  ChatSessionAgent,
-  ChatSessionAgentState,
-  ChatStreamEvent,
-  CompressionWarning,
+import {
+  type ChatMessage,
+  type ChatSessionAgent,
+  type ChatSessionAgentState,
+  type ChatStreamEvent,
+  type CompressionWarning,
 } from 'shared/types';
 import { chatApi } from '@/lib/api';
 import type { AgentStateInfo, MentionStatus, StreamRun } from '../types';

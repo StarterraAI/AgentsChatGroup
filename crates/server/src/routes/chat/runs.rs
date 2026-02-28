@@ -48,10 +48,8 @@ pub async fn get_run_diff(
         "session_agent_{}_run_{:04}_diff.patch",
         run.session_agent_id, run.run_index
     ));
-    let prefixed_diff_path = PathBuf::from(&run.run_dir).join(format!(
-        "run_{:04}_diff.patch",
-        run.run_index
-    ));
+    let prefixed_diff_path =
+        PathBuf::from(&run.run_dir).join(format!("run_{:04}_diff.patch", run.run_index));
     let legacy_diff_path = PathBuf::from(&run.run_dir).join("diff.patch");
     let content = match tokio::fs::read_to_string(&scoped_diff_path).await {
         Ok(content) => content,

@@ -148,6 +148,8 @@ export type ChatStreamDeltaType = "assistant" | "thinking";
 
 export type MentionStatus = "received" | "running" | "completed" | "failed";
 
+export type CompressionWarning = { code: string, message: string, split_file_path: string, };
+
 export type Image = { id: string, file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, created_at: string, updated_at: string, };
 
 export type CreateImage = { file_path: string, original_name: string, mime_type: string | null, size_bytes: bigint, hash: string, };
@@ -489,6 +491,16 @@ export type UiLanguage = "BROWSER" | "EN" | "FR" | "JA" | "ES" | "KO" | "ZH_HANS
 export type ShowcaseState = { seen_features: Array<string>, };
 
 export type SendMessageShortcut = "ModifierEnter" | "Enter";
+
+export type ChatCompressionConfig = { 
+/**
+ * Token threshold before compression kicks in (default: 10000000)
+ */
+token_threshold: number, 
+/**
+ * Percentage of messages to compress (default: 25)
+ */
+compression_percentage: number, };
 
 export type ChatPresetsConfig = { 
 /**
