@@ -102,13 +102,13 @@ You assign the task once. The agents figure out the rest.
 
 ## How It's Different
 
-| | Traditional Single Agent | Multi-window Workflow | Claude Code-Agent Team | AgentsChatGroup |
+| Capability | 🧍 Traditional Single Agent | 🪟 Multi-window Workflow | 🤖 Claude Code-Agent Team | 🧩 AgentsChatGroup |
 |--|--|--|--|--|
-| Parallelism | No (sequential) | Partial (manual) | Yes (Claude subagents) | Yes (automatic) |
-| Shared context | No | No (copy-paste) | Partial (split subagent contexts) | Yes (always in sync) |
-| Multi-model collaboration | No | Partial (manual switching) | No (Claude-only) | Yes (Claude + Gemini + Codex + more) |
-| Agent handoff | No | No (you orchestrate) | Partial (delegated inside Claude) | Yes (@mention) |
-| Your effort | High | Very high | Medium | Low |
+| Parallelism | ❌ No (sequential) | ⚠️ Partial (manual) | ✅ Yes (Claude subagents) | ✅ Yes (automatic) |
+| Shared context | ❌ No | ❌ No (copy-paste) | ⚠️ Partial (split subagent contexts) | ✅ Yes (always in sync) |
+| Multi-model collaboration | ❌ No | ⚠️ Partial (manual switching) | ❌ No (Claude-only) | ✅ Yes (Claude + Gemini + Codex + more) |
+| Agent handoff | ❌ No | ❌ No (you orchestrate) | ⚠️ Partial (delegated inside Claude) | ✅ Yes (@mention) |
+| Your effort | 🔺 High | 🔺 Very high | ◼️ Medium | 🔹 Low |
 
 ## Features
 
@@ -239,4 +239,3 @@ We welcome contributions! Check what's needed in [Issues](https://github.com/Sta
 ## Acknowledgements
 
 Built on top of [Vibe Kanban](https://www.vibekanban.com/) - thanks to their team for the excellent open source foundation.
-
