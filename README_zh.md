@@ -233,8 +233,8 @@ pnpm dev -- --port $env:FRONTEND_PORT --host
 | | |
 |--|--|
 | **问题反馈** | [GitHub Issues](https://github.com/StarterraAI/AgentsChatGroup/issues) |
-| **讨论交流** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions), [Discord](https://discord.gg/UuM87hQB) |
-| **社区聊天** | [Discord](https://discord.gg/UuM87hQB) |
+| **讨论交流** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) |
+| **社区聊天** | [Discord](https://discord.gg/MbgNFJeWDc) |
 
 ## 致谢
 

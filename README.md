@@ -233,8 +233,8 @@ We welcome contributions! Check what's needed in [Issues](https://github.com/Sta
 | | |
 |--|--|
 | **Bug Reports** | [GitHub Issues](https://github.com/StarterraAI/AgentsChatGroup/issues) |
-| **Discussions** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions), [Discord](https://discord.gg/UuM87hQB) |
-| **Community Chat** | [Discord](https://discord.gg/UuM87hQB) |
+| **Discussions** | [GitHub Discussions](https://github.com/StarterraAI/AgentsChatGroup/discussions) |
+| **Community Chat** | [Discord](https://discord.gg/MbgNFJeWDc) |
 
 ## Acknowledgements
 
