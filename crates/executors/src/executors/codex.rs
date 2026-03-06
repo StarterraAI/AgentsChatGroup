@@ -25,9 +25,9 @@ pub fn codex_home() -> Option<PathBuf> {
 }
 
 use async_trait::async_trait;
-use codex_app_server_protocol::{NewConversationParams, ReviewTarget};
-use codex_protocol::{
-    config_types::SandboxMode as CodexSandboxMode, protocol::AskForApproval as CodexAskForApproval,
+use codex_app_server_protocol::{
+    AskForApproval as AppServerAskForApproval, ReviewTarget, SandboxMode as AppServerSandboxMode,
+    ThreadResumeParams, ThreadStartParams,
 };
 use command_group::AsyncCommandGroup;
 use derivative::Derivative;
@@ -292,38 +292,36 @@ impl Codex {
         apply_overrides(builder, &self.cmd)
     }
 
-    fn build_new_conversation_params(&self, cwd: &Path) -> NewConversationParams {
+    fn build_thread_start_params(&self, cwd: &Path) -> ThreadStartParams {
         let sandbox = match self.sandbox.as_ref() {
-            None | Some(SandboxMode::Auto) => Some(CodexSandboxMode::WorkspaceWrite), // match the Auto preset in codex
-            Some(SandboxMode::ReadOnly) => Some(CodexSandboxMode::ReadOnly),
-            Some(SandboxMode::WorkspaceWrite) => Some(CodexSandboxMode::WorkspaceWrite),
-            Some(SandboxMode::DangerFullAccess) => Some(CodexSandboxMode::DangerFullAccess),
+            None | Some(SandboxMode::Auto) => Some(AppServerSandboxMode::WorkspaceWrite), // match the Auto preset in codex
+            Some(SandboxMode::ReadOnly) => Some(AppServerSandboxMode::ReadOnly),
+            Some(SandboxMode::WorkspaceWrite) => Some(AppServerSandboxMode::WorkspaceWrite),
+            Some(SandboxMode::DangerFullAccess) => Some(AppServerSandboxMode::DangerFullAccess),
         };
 
         let approval_policy = match self.ask_for_approval.as_ref() {
             None if matches!(self.sandbox.as_ref(), None | Some(SandboxMode::Auto)) => {
                 // match the Auto preset in codex
-                Some(CodexAskForApproval::OnRequest)
+                Some(AppServerAskForApproval::OnRequest)
             }
             None => None,
-            Some(AskForApproval::UnlessTrusted) => Some(CodexAskForApproval::UnlessTrusted),
-            Some(AskForApproval::OnFailure) => Some(CodexAskForApproval::OnFailure),
-            Some(AskForApproval::OnRequest) => Some(CodexAskForApproval::OnRequest),
-            Some(AskForApproval::Never) => Some(CodexAskForApproval::Never),
+            Some(AskForApproval::UnlessTrusted) => Some(AppServerAskForApproval::UnlessTrusted),
+            Some(AskForApproval::OnFailure) => Some(AppServerAskForApproval::OnFailure),
+            Some(AskForApproval::OnRequest) => Some(AppServerAskForApproval::OnRequest),
+            Some(AskForApproval::Never) => Some(AppServerAskForApproval::Never),
         };
 
-        NewConversationParams {
+        ThreadStartParams {
             model: self.model.clone(),
-            profile: self.profile.clone(),
             cwd: Some(cwd.to_string_lossy().to_string()),
             approval_policy,
             sandbox,
             config: self.build_config_overrides(),
             base_instructions: self.base_instructions.clone(),
-            include_apply_patch_tool: self.include_apply_patch_tool,
-            model_provider: self.model_provider.clone(),
-            compact_prompt: self.compact_prompt.clone(),
             developer_instructions: self.developer_instructions.clone(),
+            model_provider: self.model_provider.clone(),
+            experimental_raw_events: false,
         }
     }
 
@@ -353,6 +351,24 @@ impl Codex {
             );
         }
 
+        if let Some(profile) = &self.profile {
+            overrides.insert("profile".to_string(), Value::String(profile.clone()));
+        }
+
+        if let Some(compact_prompt) = &self.compact_prompt {
+            overrides.insert(
+                "compact_prompt".to_string(),
+                Value::String(compact_prompt.clone()),
+            );
+        }
+
+        if let Some(include_apply_patch_tool) = self.include_apply_patch_tool {
+            overrides.insert(
+                "include_apply_patch_tool".to_string(),
+                Value::Bool(include_apply_patch_tool),
+            );
+        }
+
         if overrides.is_empty() {
             None
         } else {
@@ -368,7 +384,7 @@ impl Codex {
         resume_session: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
-        let params = self.build_new_conversation_params(current_dir);
+        let params = self.build_thread_start_params(current_dir);
         let resume_session = resume_session.map(|s| s.to_string());
 
         self.spawn_app_server(
@@ -390,7 +406,7 @@ impl Codex {
     }
 
     async fn launch_codex_agent(
-        conversation_params: NewConversationParams,
+        thread_params: ThreadStartParams,
         resume_session: Option<String>,
         combined_prompt: String,
         client: Arc<AppServerClient>,
@@ -403,34 +419,38 @@ impl Codex {
         }
         match resume_session {
             None => {
-                let params = conversation_params;
-                let response = client.new_conversation(params).await?;
-                let conversation_id = response.conversation_id;
-                client.register_session(&conversation_id).await?;
-                client.add_conversation_listener(conversation_id).await?;
-                client
-                    .send_user_message(conversation_id, combined_prompt)
-                    .await?;
+                let response = client.start_thread(thread_params).await?;
+                let thread_id = response.thread.id;
+                client.register_session(&thread_id).await?;
+                client.start_turn(thread_id, combined_prompt).await?;
             }
             Some(session_id) => {
                 let (rollout_path, _forked_session_id) =
                     SessionHandler::fork_rollout_file(&session_id)
                         .map_err(|e| ExecutorError::FollowUpNotSupported(e.to_string()))?;
-                let overrides = conversation_params;
-                let response = client
-                    .resume_conversation(rollout_path.clone(), overrides)
-                    .await?;
+                let overrides = thread_params;
+                let params = ThreadResumeParams {
+                    thread_id: session_id,
+                    path: Some(rollout_path.clone()),
+                    model: overrides.model,
+                    model_provider: overrides.model_provider,
+                    cwd: overrides.cwd,
+                    approval_policy: overrides.approval_policy,
+                    sandbox: overrides.sandbox,
+                    config: overrides.config,
+                    base_instructions: overrides.base_instructions,
+                    developer_instructions: overrides.developer_instructions,
+                    history: None,
+                };
+                let response = client.resume_thread(params).await?;
                 tracing::debug!(
                     "resuming session using rollout file {}, response {:?}",
                     rollout_path.display(),
                     response
                 );
-                let conversation_id = response.conversation_id;
-                client.register_session(&conversation_id).await?;
-                client.add_conversation_listener(conversation_id).await?;
-                client
-                    .send_user_message(conversation_id, combined_prompt)
-                    .await?;
+                let thread_id = response.thread.id;
+                client.register_session(&thread_id).await?;
+                client.start_turn(thread_id, combined_prompt).await?;
             }
         }
         Ok(())

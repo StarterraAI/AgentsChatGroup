@@ -5,7 +5,10 @@ use std::{
 };
 
 use codex_app_server_protocol::{
-    JSONRPCNotification, JSONRPCResponse, NewConversationResponse, ServerNotification,
+    CommandExecutionStatus, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse,
+    McpToolCallResult, McpToolCallStatus, NewConversationResponse, PatchApplyStatus,
+    PatchChangeKind, ServerNotification, ServerRequest, ThreadItem, ThreadResumeResponse,
+    ThreadStartResponse, TurnPlanStepStatus,
 };
 use codex_mcp_types::ContentBlock;
 use codex_protocol::{
@@ -356,6 +359,49 @@ fn format_todo_status(status: &StepStatus) -> String {
     .to_string()
 }
 
+fn format_v2_todo_status(status: TurnPlanStepStatus) -> String {
+    match status {
+        TurnPlanStepStatus::Pending => "pending",
+        TurnPlanStepStatus::InProgress => "in_progress",
+        TurnPlanStepStatus::Completed => "completed",
+    }
+    .to_string()
+}
+
+fn normalize_v2_file_changes(
+    worktree_path: &str,
+    changes: &[codex_app_server_protocol::FileUpdateChange],
+) -> Vec<(String, Vec<FileChange>)> {
+    changes
+        .iter()
+        .map(|change| {
+            let relative = make_path_relative(&change.path, worktree_path);
+            let mut file_changes = Vec::new();
+
+            match &change.kind {
+                PatchChangeKind::Delete => file_changes.push(FileChange::Delete),
+                PatchChangeKind::Add => file_changes.push(FileChange::Edit {
+                    unified_diff: normalize_unified_diff(&relative, &change.diff),
+                    has_line_numbers: true,
+                }),
+                PatchChangeKind::Update { move_path } => {
+                    if let Some(dest) = move_path {
+                        let dest_rel =
+                            make_path_relative(dest.to_string_lossy().as_ref(), worktree_path);
+                        file_changes.push(FileChange::Rename { new_path: dest_rel });
+                    }
+                    file_changes.push(FileChange::Edit {
+                        unified_diff: normalize_unified_diff(&relative, &change.diff),
+                        has_line_numbers: true,
+                    });
+                }
+            }
+
+            (relative, file_changes)
+        })
+        .collect()
+}
+
 pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
     let entry_index = EntryIndexProvider::start_from(&msg_store);
     normalize_stderr_logs(msg_store.clone(), entry_index.clone());
@@ -378,23 +424,30 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                 continue;
             }
 
+            if let Ok(request) = serde_json::from_str::<JSONRPCRequest>(&line) {
+                handle_jsonrpc_request(
+                    request,
+                    &mut state,
+                    &msg_store,
+                    &entry_index,
+                    &worktree_path_str,
+                );
+                continue;
+            }
+
             if let Ok(response) = serde_json::from_str::<JSONRPCResponse>(&line) {
                 handle_jsonrpc_response(response, &msg_store, &entry_index);
                 continue;
             }
 
             if let Ok(server_notification) = serde_json::from_str::<ServerNotification>(&line) {
-                if let ServerNotification::SessionConfigured(session_configured) =
-                    server_notification
-                {
-                    msg_store.push_session_id(session_configured.session_id.to_string());
-                    handle_model_params(
-                        session_configured.model,
-                        session_configured.reasoning_effort,
-                        &msg_store,
-                        &entry_index,
-                    );
-                };
+                handle_server_notification(
+                    server_notification,
+                    &mut state,
+                    &msg_store,
+                    &entry_index,
+                    &worktree_path_str,
+                );
                 continue;
             } else if let Some(session_id) = line
                 .strip_prefix(r#"{"method":"sessionConfigured","params":{"sessionId":""#)
@@ -1090,11 +1143,586 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
     });
 }
 
+fn handle_jsonrpc_request(
+    request: JSONRPCRequest,
+    state: &mut LogState,
+    msg_store: &Arc<MsgStore>,
+    entry_index: &EntryIndexProvider,
+    _worktree_path: &str,
+) {
+    let Ok(server_request) = ServerRequest::try_from(request) else {
+        return;
+    };
+
+    match server_request {
+        ServerRequest::CommandExecutionRequestApproval { params, .. } => {
+            let command_state = state
+                .commands
+                .entry(params.item_id.clone())
+                .or_insert_with(|| CommandState {
+                    index: None,
+                    command: params
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| "command execution".to_string()),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    formatted_output: None,
+                    status: ToolStatus::Created,
+                    exit_code: None,
+                    awaiting_approval: false,
+                    call_id: params.item_id.clone(),
+                });
+            command_state.awaiting_approval = true;
+            if let Some(index) = command_state.index {
+                replace_normalized_entry(&msg_store, index, command_state.to_normalized_entry());
+            } else {
+                let index = add_normalized_entry(
+                    &msg_store,
+                    &entry_index,
+                    command_state.to_normalized_entry(),
+                );
+                command_state.index = Some(index);
+            }
+        }
+        ServerRequest::FileChangeRequestApproval { params, .. } => {
+            if let Some(patch_state) = state.patches.get_mut(&params.item_id) {
+                for entry in &mut patch_state.entries {
+                    entry.awaiting_approval = true;
+                    if let Some(index) = entry.index {
+                        replace_normalized_entry(&msg_store, index, entry.to_normalized_entry());
+                    }
+                }
+            }
+        }
+        ServerRequest::ExecCommandApproval { .. } | ServerRequest::ApplyPatchApproval { .. } => {}
+    }
+}
+
+fn handle_server_notification(
+    server_notification: ServerNotification,
+    state: &mut LogState,
+    msg_store: &Arc<MsgStore>,
+    entry_index: &EntryIndexProvider,
+    worktree_path: &str,
+) {
+    match server_notification {
+        ServerNotification::SessionConfigured(session_configured) => {
+            msg_store.push_session_id(session_configured.session_id.to_string());
+            handle_model_params(
+                session_configured.model,
+                session_configured.reasoning_effort,
+                msg_store,
+                entry_index,
+            );
+        }
+        ServerNotification::ThreadStarted(payload) => {
+            if let Ok(session_id) =
+                SessionHandler::extract_session_id_from_rollout_path(payload.thread.path.clone())
+            {
+                msg_store.push_session_id(session_id);
+            } else {
+                msg_store.push_session_id(payload.thread.id);
+            }
+        }
+        ServerNotification::ItemStarted(payload) => {
+            handle_v2_item_started(payload.item, state, msg_store, entry_index, worktree_path);
+        }
+        ServerNotification::ItemCompleted(payload) => {
+            handle_v2_item_completed(payload.item, state, msg_store, entry_index, worktree_path);
+        }
+        ServerNotification::AgentMessageDelta(payload) => {
+            state.thinking = None;
+            let (entry, index, is_new) = state.assistant_message_append(payload.delta);
+            upsert_normalized_entry(msg_store, index, entry, is_new);
+        }
+        ServerNotification::ReasoningSummaryTextDelta(payload) => {
+            state.assistant = None;
+            let (entry, index, is_new) = state.thinking_append(payload.delta);
+            upsert_normalized_entry(msg_store, index, entry, is_new);
+        }
+        ServerNotification::ReasoningTextDelta(payload) => {
+            state.assistant = None;
+            let (entry, index, is_new) = state.thinking_append(payload.delta);
+            upsert_normalized_entry(msg_store, index, entry, is_new);
+        }
+        ServerNotification::ReasoningSummaryPartAdded(_) => {
+            state.assistant = None;
+            state.thinking = None;
+        }
+        ServerNotification::CommandExecutionOutputDelta(payload) => {
+            if let Some(command_state) = state.commands.get_mut(&payload.item_id) {
+                if !payload.delta.is_empty() {
+                    command_state.stdout.push_str(&payload.delta);
+                    if let Some(index) = command_state.index {
+                        replace_normalized_entry(
+                            msg_store,
+                            index,
+                            command_state.to_normalized_entry(),
+                        );
+                    }
+                }
+            }
+        }
+        ServerNotification::TurnPlanUpdated(payload) => {
+            let todos: Vec<TodoItem> = payload
+                .plan
+                .into_iter()
+                .map(|item| TodoItem {
+                    content: item.step,
+                    status: format_v2_todo_status(item.status),
+                    priority: None,
+                })
+                .collect();
+            let explanation = payload
+                .explanation
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string);
+            let content = explanation.clone().unwrap_or_else(|| {
+                if todos.is_empty() {
+                    "Plan updated".to_string()
+                } else {
+                    format!("Plan updated ({} steps)", todos.len())
+                }
+            });
+
+            add_normalized_entry(
+                msg_store,
+                entry_index,
+                NormalizedEntry {
+                    timestamp: None,
+                    entry_type: NormalizedEntryType::ToolUse {
+                        tool_name: "plan".to_string(),
+                        action_type: ActionType::TodoManagement {
+                            todos,
+                            operation: "update".to_string(),
+                        },
+                        status: ToolStatus::Success,
+                    },
+                    content,
+                    metadata: None,
+                },
+            );
+        }
+        ServerNotification::ThreadTokenUsageUpdated(payload) => {
+            let last = payload.token_usage.last;
+            let billable_tokens = (last.input_tokens + last.output_tokens) as u32;
+            add_normalized_entry(
+                msg_store,
+                entry_index,
+                NormalizedEntry {
+                    timestamp: None,
+                    entry_type: NormalizedEntryType::TokenUsageInfo(crate::logs::TokenUsageInfo {
+                        total_tokens: billable_tokens,
+                        model_context_window: payload
+                            .token_usage
+                            .model_context_window
+                            .unwrap_or_default()
+                            as u32,
+                        input_tokens: Some(last.input_tokens as u32),
+                        output_tokens: Some(last.output_tokens as u32),
+                        cache_read_tokens: Some(last.cached_input_tokens as u32),
+                        is_estimated: false,
+                    }),
+                    content: format!(
+                        "Tokens used: {} / Context window: {}",
+                        billable_tokens,
+                        payload.token_usage.model_context_window.unwrap_or_default()
+                    ),
+                    metadata: None,
+                },
+            );
+        }
+        ServerNotification::ContextCompacted(_) => {
+            add_normalized_entry(
+                msg_store,
+                entry_index,
+                NormalizedEntry {
+                    timestamp: None,
+                    entry_type: NormalizedEntryType::SystemMessage,
+                    content: "Context compacted".to_string(),
+                    metadata: None,
+                },
+            );
+        }
+        ServerNotification::Error(payload) => {
+            add_normalized_entry(
+                msg_store,
+                entry_index,
+                NormalizedEntry {
+                    timestamp: None,
+                    entry_type: NormalizedEntryType::ErrorMessage {
+                        error_type: NormalizedEntryError::Other,
+                    },
+                    content: format!("Error: {}", payload.error.message),
+                    metadata: None,
+                },
+            );
+        }
+        ServerNotification::TurnStarted(_)
+        | ServerNotification::TurnCompleted(_)
+        | ServerNotification::TurnDiffUpdated(_)
+        | ServerNotification::RawResponseItemCompleted(_)
+        | ServerNotification::TerminalInteraction(_)
+        | ServerNotification::FileChangeOutputDelta(_)
+        | ServerNotification::McpToolCallProgress(_)
+        | ServerNotification::McpServerOauthLoginCompleted(_)
+        | ServerNotification::AccountUpdated(_)
+        | ServerNotification::AccountRateLimitsUpdated(_)
+        | ServerNotification::DeprecationNotice(_)
+        | ServerNotification::ConfigWarning(_)
+        | ServerNotification::WindowsWorldWritableWarning(_)
+        | ServerNotification::AccountLoginCompleted(_)
+        | ServerNotification::AuthStatusChange(_)
+        | ServerNotification::LoginChatGptComplete(_) => {}
+    }
+}
+
+fn handle_v2_item_started(
+    item: ThreadItem,
+    state: &mut LogState,
+    msg_store: &Arc<MsgStore>,
+    entry_index: &EntryIndexProvider,
+    worktree_path: &str,
+) {
+    match item {
+        ThreadItem::CommandExecution {
+            id,
+            command,
+            aggregated_output,
+            exit_code,
+            ..
+        } => {
+            state.assistant = None;
+            state.thinking = None;
+            let command_state = state.commands.entry(id.clone()).or_insert(CommandState {
+                index: None,
+                command: command.clone(),
+                stdout: String::new(),
+                stderr: String::new(),
+                formatted_output: aggregated_output.clone(),
+                status: ToolStatus::Created,
+                exit_code,
+                awaiting_approval: false,
+                call_id: id.clone(),
+            });
+            command_state.command = command;
+            command_state.formatted_output = aggregated_output;
+            command_state.exit_code = exit_code;
+            if let Some(index) = command_state.index {
+                replace_normalized_entry(msg_store, index, command_state.to_normalized_entry());
+            } else {
+                let index = add_normalized_entry(
+                    msg_store,
+                    entry_index,
+                    command_state.to_normalized_entry(),
+                );
+                command_state.index = Some(index);
+            }
+        }
+        ThreadItem::FileChange { id, changes, .. } => {
+            state.assistant = None;
+            state.thinking = None;
+            let normalized = normalize_v2_file_changes(worktree_path, &changes);
+            let patch_state = state.patches.entry(id.clone()).or_default();
+            patch_state.entries.clear();
+            for (path, file_changes) in normalized {
+                let mut entry = PatchEntry {
+                    index: None,
+                    path,
+                    changes: file_changes,
+                    status: ToolStatus::Created,
+                    awaiting_approval: false,
+                    call_id: id.clone(),
+                };
+                let index =
+                    add_normalized_entry(msg_store, entry_index, entry.to_normalized_entry());
+                entry.index = Some(index);
+                patch_state.entries.push(entry);
+            }
+        }
+        ThreadItem::McpToolCall {
+            id,
+            server,
+            tool,
+            arguments,
+            ..
+        } => {
+            state.assistant = None;
+            state.thinking = None;
+            let invocation = McpInvocation {
+                server,
+                tool,
+                arguments: Some(arguments),
+            };
+            let tool_state = state.mcp_tools.entry(id.clone()).or_insert(McpToolState {
+                index: None,
+                invocation,
+                result: None,
+                status: ToolStatus::Created,
+            });
+            if let Some(index) = tool_state.index {
+                replace_normalized_entry(msg_store, index, tool_state.to_normalized_entry());
+            } else {
+                let index =
+                    add_normalized_entry(msg_store, entry_index, tool_state.to_normalized_entry());
+                tool_state.index = Some(index);
+            }
+        }
+        ThreadItem::WebSearch { id, query } => {
+            state.assistant = None;
+            state.thinking = None;
+            let web_search_state = state
+                .web_searches
+                .entry(id)
+                .or_insert_with(WebSearchState::new);
+            web_search_state.query = Some(query);
+            if let Some(index) = web_search_state.index {
+                replace_normalized_entry(msg_store, index, web_search_state.to_normalized_entry());
+            } else {
+                let index = add_normalized_entry(
+                    msg_store,
+                    entry_index,
+                    web_search_state.to_normalized_entry(),
+                );
+                web_search_state.index = Some(index);
+            }
+        }
+        ThreadItem::ImageView { path, .. } => {
+            state.assistant = None;
+            state.thinking = None;
+            let relative_path = make_path_relative(&path, worktree_path);
+            add_normalized_entry(
+                msg_store,
+                entry_index,
+                NormalizedEntry {
+                    timestamp: None,
+                    entry_type: NormalizedEntryType::ToolUse {
+                        tool_name: "view_image".to_string(),
+                        action_type: ActionType::FileRead {
+                            path: relative_path.clone(),
+                        },
+                        status: ToolStatus::Success,
+                    },
+                    content: relative_path,
+                    metadata: None,
+                },
+            );
+        }
+        ThreadItem::AgentMessage { text, .. } if !text.is_empty() => {
+            state.thinking = None;
+            let (entry, index, is_new) = state.assistant_message(text);
+            upsert_normalized_entry(msg_store, index, entry, is_new);
+            state.assistant = None;
+        }
+        ThreadItem::Reasoning {
+            summary, content, ..
+        } => {
+            let text = if summary.is_empty() {
+                content.join("")
+            } else {
+                summary.join("")
+            };
+            if !text.is_empty() {
+                state.assistant = None;
+                let (entry, index, is_new) = state.thinking(text);
+                upsert_normalized_entry(msg_store, index, entry, is_new);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_v2_item_completed(
+    item: ThreadItem,
+    state: &mut LogState,
+    msg_store: &Arc<MsgStore>,
+    entry_index: &EntryIndexProvider,
+    worktree_path: &str,
+) {
+    match item {
+        ThreadItem::AgentMessage { text, .. } => {
+            state.thinking = None;
+            let (entry, index, is_new) = state.assistant_message(text);
+            upsert_normalized_entry(msg_store, index, entry, is_new);
+            state.assistant = None;
+        }
+        ThreadItem::Reasoning {
+            summary, content, ..
+        } => {
+            let text = if summary.is_empty() {
+                content.join("")
+            } else {
+                summary.join("")
+            };
+            if !text.is_empty() {
+                state.assistant = None;
+                let (entry, index, is_new) = state.thinking(text);
+                upsert_normalized_entry(msg_store, index, entry, is_new);
+                state.thinking = None;
+            }
+        }
+        ThreadItem::CommandExecution {
+            id,
+            aggregated_output,
+            exit_code,
+            status,
+            ..
+        } => {
+            if let Some(mut command_state) = state.commands.remove(&id) {
+                command_state.formatted_output = aggregated_output;
+                command_state.exit_code = exit_code;
+                command_state.awaiting_approval = false;
+                command_state.status = match status {
+                    CommandExecutionStatus::Completed => ToolStatus::Success,
+                    CommandExecutionStatus::Failed => ToolStatus::Failed,
+                    CommandExecutionStatus::Declined => ToolStatus::Denied { reason: None },
+                    CommandExecutionStatus::InProgress => ToolStatus::Created,
+                };
+                if let Some(index) = command_state.index {
+                    replace_normalized_entry(msg_store, index, command_state.to_normalized_entry());
+                }
+            }
+        }
+        ThreadItem::FileChange {
+            id,
+            changes,
+            status,
+        } => {
+            let status = match status {
+                PatchApplyStatus::Completed => ToolStatus::Success,
+                PatchApplyStatus::Failed => ToolStatus::Failed,
+                PatchApplyStatus::Declined => ToolStatus::Denied { reason: None },
+                PatchApplyStatus::InProgress => ToolStatus::Created,
+            };
+
+            if let Some(mut patch_state) = state.patches.remove(&id) {
+                let normalized = normalize_v2_file_changes(worktree_path, &changes);
+                for (entry, (path, file_changes)) in patch_state.entries.iter_mut().zip(normalized)
+                {
+                    entry.path = path;
+                    entry.changes = file_changes;
+                    entry.status = status.clone();
+                    if let Some(index) = entry.index {
+                        replace_normalized_entry(msg_store, index, entry.to_normalized_entry());
+                    }
+                }
+            }
+        }
+        ThreadItem::McpToolCall {
+            id,
+            status,
+            result,
+            error,
+            ..
+        } => {
+            if let Some(mut mcp_tool_state) = state.mcp_tools.remove(&id) {
+                mcp_tool_state.status = match status {
+                    McpToolCallStatus::Completed => ToolStatus::Success,
+                    McpToolCallStatus::Failed => ToolStatus::Failed,
+                    McpToolCallStatus::InProgress => ToolStatus::Created,
+                };
+                if let Some(result) = result {
+                    mcp_tool_state.result = Some(tool_result_from_v2_mcp_result(result));
+                } else if let Some(error) = error {
+                    mcp_tool_state.result = Some(ToolResult {
+                        r#type: ToolResultValueType::Markdown,
+                        value: Value::String(error.message),
+                    });
+                }
+                if let Some(index) = mcp_tool_state.index {
+                    replace_normalized_entry(
+                        msg_store,
+                        index,
+                        mcp_tool_state.to_normalized_entry(),
+                    );
+                }
+            }
+        }
+        ThreadItem::WebSearch { id, query } => {
+            if let Some(mut entry) = state.web_searches.remove(&id) {
+                entry.status = ToolStatus::Success;
+                entry.query = Some(query);
+                if let Some(index) = entry.index {
+                    replace_normalized_entry(msg_store, index, entry.to_normalized_entry());
+                }
+            }
+        }
+        other => handle_v2_item_started(other, state, msg_store, entry_index, worktree_path),
+    }
+}
+
+fn tool_result_from_v2_mcp_result(result: McpToolCallResult) -> ToolResult {
+    if result
+        .content
+        .iter()
+        .all(|block| matches!(block, ContentBlock::TextContent(_)))
+    {
+        ToolResult {
+            r#type: ToolResultValueType::Markdown,
+            value: Value::String(
+                result
+                    .content
+                    .into_iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::TextContent(text) => Some(text.text),
+                        _ => None,
+                    })
+                    .collect::<String>(),
+            ),
+        }
+    } else if let Some(structured_content) = result.structured_content {
+        ToolResult {
+            r#type: ToolResultValueType::Json,
+            value: structured_content,
+        }
+    } else {
+        ToolResult {
+            r#type: ToolResultValueType::Json,
+            value: serde_json::to_value(result).unwrap_or(Value::Null),
+        }
+    }
+}
+
 fn handle_jsonrpc_response(
     response: JSONRPCResponse,
     msg_store: &Arc<MsgStore>,
     entry_index: &EntryIndexProvider,
 ) {
+    if let Ok(response) = serde_json::from_value::<ThreadStartResponse>(response.result.clone()) {
+        let ThreadStartResponse {
+            thread,
+            model,
+            reasoning_effort,
+            ..
+        } = response;
+        match SessionHandler::extract_session_id_from_rollout_path(thread.path) {
+            Ok(session_id) => msg_store.push_session_id(session_id),
+            Err(err) => tracing::error!("failed to extract session id: {err}"),
+        }
+
+        handle_model_params(model, reasoning_effort, msg_store, entry_index);
+        return;
+    }
+
+    if let Ok(response) = serde_json::from_value::<ThreadResumeResponse>(response.result.clone()) {
+        let ThreadResumeResponse {
+            thread,
+            model,
+            reasoning_effort,
+            ..
+        } = response;
+        match SessionHandler::extract_session_id_from_rollout_path(thread.path) {
+            Ok(session_id) => msg_store.push_session_id(session_id),
+            Err(err) => tracing::error!("failed to extract session id: {err}"),
+        }
+
+        handle_model_params(model, reasoning_effort, msg_store, entry_index);
+        return;
+    }
+
     let Ok(response) = serde_json::from_value::<NewConversationResponse>(response.result.clone())
     else {
         return;
@@ -1281,5 +1909,111 @@ impl ToNormalizedEntryOpt for Approval {
                 metadata: None,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use codex_app_server_protocol::RequestId;
+    use workspace_utils::{log_msg::LogMsg, msg_store::MsgStore};
+
+    use super::handle_jsonrpc_response;
+    use crate::logs::utils::EntryIndexProvider;
+
+    fn session_id_from_history(store: &MsgStore) -> Option<String> {
+        store.get_history().into_iter().find_map(|msg| match msg {
+            LogMsg::SessionId(id) => Some(id),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn handle_jsonrpc_response_supports_thread_start_response() {
+        let msg_store = std::sync::Arc::new(MsgStore::new());
+        let entry_index = EntryIndexProvider::start_from(&msg_store);
+        let response = codex_app_server_protocol::ThreadStartResponse {
+            thread: codex_app_server_protocol::Thread {
+                id: "88d1d63d-b84e-4f3d-9d87-1fb21839379d".to_string(),
+                preview: String::new(),
+                model_provider: "openai".to_string(),
+                created_at: 0,
+                path: PathBuf::from(
+                    "C:/Users/Admin/.codex/sessions/2026/03/06/rollout-2026-03-06T10-00-00-88d1d63d-b84e-4f3d-9d87-1fb21839379d.jsonl",
+                ),
+                cwd: PathBuf::from("E:/workspace/projectSS/agents-chatgroup-codex-latest-protocol"),
+                cli_version: "0.0.0".to_string(),
+                source: codex_app_server_protocol::SessionSource::AppServer,
+                git_info: None,
+                turns: Vec::new(),
+            },
+            model: "gpt-5-codex".to_string(),
+            model_provider: "openai".to_string(),
+            cwd: PathBuf::from("E:/workspace/projectSS/agents-chatgroup-codex-latest-protocol"),
+            approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            sandbox: codex_app_server_protocol::SandboxPolicy::WorkspaceWrite {
+                writable_roots: Vec::new(),
+                network_access: false,
+                exclude_tmpdir_env_var: false,
+                exclude_slash_tmp: false,
+            },
+            reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::Medium),
+        };
+        let response = codex_app_server_protocol::JSONRPCResponse {
+            id: RequestId::Integer(1),
+            result: serde_json::to_value(response).unwrap(),
+        };
+
+        handle_jsonrpc_response(response, &msg_store, &entry_index);
+
+        assert_eq!(
+            session_id_from_history(&msg_store).as_deref(),
+            Some("88d1d63d-b84e-4f3d-9d87-1fb21839379d")
+        );
+    }
+
+    #[test]
+    fn handle_jsonrpc_response_supports_thread_resume_response() {
+        let msg_store = std::sync::Arc::new(MsgStore::new());
+        let entry_index = EntryIndexProvider::start_from(&msg_store);
+        let response = codex_app_server_protocol::ThreadResumeResponse {
+            thread: codex_app_server_protocol::Thread {
+                id: "9bfb6d6f-73c8-4b39-8e6d-2dc1f18a75f1".to_string(),
+                preview: String::new(),
+                model_provider: "openai".to_string(),
+                created_at: 0,
+                path: PathBuf::from(
+                    "C:/Users/Admin/.codex/sessions/2026/03/06/rollout-2026-03-06T11-00-00-9bfb6d6f-73c8-4b39-8e6d-2dc1f18a75f1.jsonl",
+                ),
+                cwd: PathBuf::from("E:/workspace/projectSS/agents-chatgroup-codex-latest-protocol"),
+                cli_version: "0.0.0".to_string(),
+                source: codex_app_server_protocol::SessionSource::AppServer,
+                git_info: None,
+                turns: Vec::new(),
+            },
+            model: "gpt-5-codex".to_string(),
+            model_provider: "openai".to_string(),
+            cwd: PathBuf::from("E:/workspace/projectSS/agents-chatgroup-codex-latest-protocol"),
+            approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            sandbox: codex_app_server_protocol::SandboxPolicy::WorkspaceWrite {
+                writable_roots: Vec::new(),
+                network_access: false,
+                exclude_tmpdir_env_var: false,
+                exclude_slash_tmp: false,
+            },
+            reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::Medium),
+        };
+        let response = codex_app_server_protocol::JSONRPCResponse {
+            id: RequestId::Integer(2),
+            result: serde_json::to_value(response).unwrap(),
+        };
+
+        handle_jsonrpc_response(response, &msg_store, &entry_index);
+
+        assert_eq!(
+            session_id_from_history(&msg_store).as_deref(),
+            Some("9bfb6d6f-73c8-4b39-8e6d-2dc1f18a75f1")
+        );
     }
 }
