@@ -15,8 +15,9 @@ pub fn make_path_relative(path: &str, worktree_path: &str) -> String {
     let path_obj = normalize_macos_private_alias(Path::new(&path));
     let worktree_path_obj = normalize_macos_private_alias(Path::new(worktree_path));
 
-    // If path is already relative, return as is
-    if path_obj.is_relative() {
+    // On Windows, "/tmp/foo" is rooted but not considered absolute by std::path.
+    // Treat rooted paths as absolute-ish so they still flow through prefix stripping.
+    if path_obj.is_relative() && !path_obj.has_root() {
         return path.to_string();
     }
 
@@ -151,6 +152,15 @@ mod tests {
         assert_eq!(
             make_path_relative("/other/path/file.js", "/tmp/test-worktree"),
             "/other/path/file.js"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_make_path_relative_handles_rooted_unix_style_paths_on_windows() {
+        assert_eq!(
+            make_path_relative("/tmp/test-worktree/src/main.rs", "/tmp/test-worktree"),
+            "src/main.rs"
         );
     }
 

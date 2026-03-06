@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     io,
     sync::{
         Arc, OnceLock,
@@ -10,18 +10,19 @@ use std::{
 
 use async_trait::async_trait;
 use codex_app_server_protocol::{
-    AddConversationListenerParams, AddConversationSubscriptionResponse, ApplyPatchApprovalResponse,
-    ClientInfo, ClientNotification, ClientRequest, ExecCommandApprovalResponse,
-    GetAuthStatusParams, GetAuthStatusResponse, InitializeParams, InitializeResponse, InputItem,
-    JSONRPCError, JSONRPCNotification, JSONRPCRequest, JSONRPCResponse, ListMcpServerStatusParams,
-    ListMcpServerStatusResponse, NewConversationParams, NewConversationResponse, RequestId,
-    ResumeConversationParams, ResumeConversationResponse, ReviewStartParams, ReviewStartResponse,
-    ReviewTarget, SendUserMessageParams, SendUserMessageResponse, ServerNotification,
-    ServerRequest,
+    ApplyPatchApprovalResponse, ClientInfo, ClientNotification, ClientRequest,
+    CommandExecutionApprovalDecision, CommandExecutionRequestApprovalResponse,
+    ExecCommandApprovalResponse, FileChangeApprovalDecision, FileChangeRequestApprovalResponse,
+    GetAuthStatusParams, GetAuthStatusResponse, InitializeParams, InitializeResponse, JSONRPCError,
+    JSONRPCNotification, JSONRPCRequest, JSONRPCResponse, ListMcpServerStatusParams,
+    ListMcpServerStatusResponse, RequestId, ReviewStartParams, ReviewStartResponse, ReviewTarget,
+    ServerNotification, ServerRequest, ThreadItem, ThreadResumeParams, ThreadResumeResponse,
+    ThreadStartParams, ThreadStartResponse, TurnCompletedNotification, TurnStartParams,
+    TurnStartResponse, TurnStatus, UserInput,
 };
-use codex_protocol::{ThreadId, protocol::ReviewDecision};
+use codex_protocol::protocol::ReviewDecision;
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{self, Value};
+use serde_json::{self, Map, Value};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt, BufWriter},
     sync::Mutex,
@@ -40,7 +41,8 @@ pub struct AppServerClient {
     rpc: OnceLock<JsonRpcPeer>,
     log_writer: LogWriter,
     approvals: Option<Arc<dyn ExecutorApprovalService>>,
-    conversation_id: Mutex<Option<ThreadId>>,
+    thread_id: Mutex<Option<String>>,
+    items_by_id: Mutex<HashMap<String, ThreadItem>>,
     pending_feedback: Mutex<VecDeque<String>>,
     auto_approve: bool,
     repo_context: RepoContext,
@@ -65,7 +67,8 @@ impl AppServerClient {
             log_writer,
             approvals,
             auto_approve,
-            conversation_id: Mutex::new(None),
+            thread_id: Mutex::new(None),
+            items_by_id: Mutex::new(HashMap::new()),
             pending_feedback: Mutex::new(VecDeque::new()),
             repo_context,
             commit_reminder,
@@ -104,61 +107,51 @@ impl AppServerClient {
         self.send_message(&ClientNotification::Initialized).await
     }
 
-    pub async fn new_conversation(
+    pub async fn start_thread(
         &self,
-        params: NewConversationParams,
-    ) -> Result<NewConversationResponse, ExecutorError> {
-        let request = ClientRequest::NewConversation {
+        params: ThreadStartParams,
+    ) -> Result<ThreadStartResponse, ExecutorError> {
+        let request = ClientRequest::ThreadStart {
             request_id: self.next_request_id(),
             params,
         };
-        self.send_request(request, "newConversation").await
+        self.send_request(request, "thread/start").await
     }
 
-    pub async fn resume_conversation(
+    pub async fn resume_thread(
         &self,
-        rollout_path: std::path::PathBuf,
-        overrides: NewConversationParams,
-    ) -> Result<ResumeConversationResponse, ExecutorError> {
-        let request = ClientRequest::ResumeConversation {
+        params: ThreadResumeParams,
+    ) -> Result<ThreadResumeResponse, ExecutorError> {
+        let request = ClientRequest::ThreadResume {
             request_id: self.next_request_id(),
-            params: ResumeConversationParams {
-                path: Some(rollout_path),
-                overrides: Some(overrides),
-                conversation_id: None,
-                history: None,
-            },
+            params,
         };
-        self.send_request(request, "resumeConversation").await
+        self.send_request(request, "thread/resume").await
     }
 
-    pub async fn add_conversation_listener(
+    pub async fn start_turn(
         &self,
-        conversation_id: codex_protocol::ThreadId,
-    ) -> Result<AddConversationSubscriptionResponse, ExecutorError> {
-        let request = ClientRequest::AddConversationListener {
-            request_id: self.next_request_id(),
-            params: AddConversationListenerParams {
-                conversation_id,
-                experimental_raw_events: false,
-            },
-        };
-        self.send_request(request, "addConversationListener").await
-    }
-
-    pub async fn send_user_message(
-        &self,
-        conversation_id: codex_protocol::ThreadId,
+        thread_id: String,
         message: String,
-    ) -> Result<SendUserMessageResponse, ExecutorError> {
-        let request = ClientRequest::SendUserMessage {
+    ) -> Result<TurnStartResponse, ExecutorError> {
+        let request = ClientRequest::TurnStart {
             request_id: self.next_request_id(),
-            params: SendUserMessageParams {
-                conversation_id,
-                items: vec![InputItem::Text { text: message }],
+            params: TurnStartParams {
+                thread_id,
+                input: vec![UserInput::Text {
+                    text: message,
+                    text_elements: Vec::new(),
+                }],
+                cwd: None,
+                approval_policy: None,
+                sandbox_policy: None,
+                model: None,
+                effort: None,
+                summary: None,
+                output_schema: None,
             },
         };
-        self.send_request(request, "sendUserMessage").await
+        self.send_request(request, "turn/start").await
     }
 
     pub async fn get_auth_status(&self) -> Result<GetAuthStatusResponse, ExecutorError> {
@@ -185,7 +178,7 @@ impl AppServerClient {
                 delivery: None,
             },
         };
-        self.send_request(request, "reviewStart").await
+        self.send_request(request, "review/start").await
     }
 
     pub async fn list_mcp_server_status(
@@ -236,7 +229,7 @@ impl AppServerClient {
                         .raw(),
                     )
                     .await?;
-                let (decision, feedback) = self.review_decision(&status).await?;
+                let (decision, feedback) = self.legacy_review_decision(&status);
                 let response = ApplyPatchApprovalResponse { decision };
                 send_server_response(peer, request_id, response).await?;
                 if let Some(message) = feedback {
@@ -269,7 +262,7 @@ impl AppServerClient {
                     )
                     .await?;
 
-                let (decision, feedback) = self.review_decision(&status).await?;
+                let (decision, feedback) = self.legacy_review_decision(&status);
                 let response = ExecCommandApprovalResponse { decision };
                 send_server_response(peer, request_id, response).await?;
                 if let Some(message) = feedback {
@@ -278,15 +271,73 @@ impl AppServerClient {
                 }
                 Ok(())
             }
-            ServerRequest::CommandExecutionRequestApproval { .. }
-            | ServerRequest::FileChangeRequestApproval { .. } => {
-                // These are unreachable until switching to v2 APIs for starting the session.
-                // https://github.com/openai/codex/blob/cbd7d0d54330443887852b21636c816f60f1bde8/codex-rs/app-server-protocol/src/protocol/common.rs#L445
-                tracing::error!("received unsupported server request: {:?}", request);
-                Err(
-                    ExecutorApprovalError::RequestFailed("unsupported server request".to_string())
-                        .into(),
-                )
+            ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
+                let input = self
+                    .approval_input("commandExecution", &params.item_id, &params)
+                    .await?;
+                let status = self
+                    .request_tool_approval("bash", input, &params.item_id)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!(
+                            "Codex command approval failed for item_id={}: {err}",
+                            params.item_id
+                        );
+                        err
+                    })?;
+                self.log_writer
+                    .log_raw(
+                        &Approval::approval_response(
+                            params.item_id.clone(),
+                            "codex.exec_command".to_string(),
+                            status.clone(),
+                        )
+                        .raw(),
+                    )
+                    .await?;
+
+                let (decision, feedback) = self.command_approval_decision(&status);
+                let response = CommandExecutionRequestApprovalResponse { decision };
+                send_server_response(peer, request_id, response).await?;
+                if let Some(message) = feedback {
+                    tracing::debug!("queueing command denial feedback: {message}");
+                    self.enqueue_feedback(message).await;
+                }
+                Ok(())
+            }
+            ServerRequest::FileChangeRequestApproval { request_id, params } => {
+                let input = self
+                    .approval_input("fileChange", &params.item_id, &params)
+                    .await?;
+                let status = self
+                    .request_tool_approval("edit", input, &params.item_id)
+                    .await
+                    .map_err(|err| {
+                        tracing::error!(
+                            "Codex file change approval failed for item_id={}: {err}",
+                            params.item_id
+                        );
+                        err
+                    })?;
+                self.log_writer
+                    .log_raw(
+                        &Approval::approval_response(
+                            params.item_id.clone(),
+                            "codex.apply_patch".to_string(),
+                            status.clone(),
+                        )
+                        .raw(),
+                    )
+                    .await?;
+
+                let (decision, feedback) = self.file_change_approval_decision(&status);
+                let response = FileChangeRequestApprovalResponse { decision };
+                send_server_response(peer, request_id, response).await?;
+                if let Some(message) = feedback {
+                    tracing::debug!("queueing file change denial feedback: {message}");
+                    self.enqueue_feedback(message).await;
+                }
+                Ok(())
             }
         }
     }
@@ -310,10 +361,10 @@ impl AppServerClient {
             .await?)
     }
 
-    pub async fn register_session(&self, conversation_id: &ThreadId) -> Result<(), ExecutorError> {
+    pub async fn register_session(&self, thread_id: &str) -> Result<(), ExecutorError> {
         {
-            let mut guard = self.conversation_id.lock().await;
-            guard.replace(*conversation_id);
+            let mut guard = self.thread_id.lock().await;
+            guard.replace(thread_id.to_string());
         }
         self.flush_pending_feedback().await;
         Ok(())
@@ -340,15 +391,167 @@ impl AppServerClient {
         self.rpc().next_request_id()
     }
 
-    async fn review_decision(
-        &self,
-        status: &ApprovalStatus,
-    ) -> Result<(ReviewDecision, Option<String>), ExecutorError> {
-        if self.auto_approve {
-            return Ok((ReviewDecision::ApprovedForSession, None));
+    async fn enqueue_feedback(&self, message: String) {
+        if message.trim().is_empty() {
+            return;
+        }
+        let mut guard = self.pending_feedback.lock().await;
+        guard.push_back(message);
+    }
+
+    async fn flush_pending_feedback(&self) -> bool {
+        let messages: Vec<String> = {
+            let mut guard = self.pending_feedback.lock().await;
+            guard.drain(..).collect()
+        };
+
+        if messages.is_empty() {
+            return false;
         }
 
-        let outcome = match status {
+        let Some(thread_id) = self.thread_id.lock().await.clone() else {
+            tracing::warn!(
+                "pending Codex feedback but thread id unavailable; dropping {} messages",
+                messages.len()
+            );
+            return false;
+        };
+
+        let mut sent = false;
+        for message in messages {
+            let trimmed = message.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            self.spawn_user_message(thread_id.clone(), format!("User feedback: {trimmed}"));
+            sent = true;
+        }
+        sent
+    }
+
+    fn spawn_user_message(&self, thread_id: String, message: String) {
+        let peer = self.rpc().clone();
+        let cancel = self.cancel.clone();
+        let request = ClientRequest::TurnStart {
+            request_id: peer.next_request_id(),
+            params: TurnStartParams {
+                thread_id,
+                input: vec![UserInput::Text {
+                    text: message,
+                    text_elements: Vec::new(),
+                }],
+                cwd: None,
+                approval_policy: None,
+                sandbox_policy: None,
+                model: None,
+                effort: None,
+                summary: None,
+                output_schema: None,
+            },
+        };
+        tokio::spawn(async move {
+            if let Err(err) = peer
+                .request::<TurnStartResponse, _>(
+                    request_id(&request),
+                    &request,
+                    "turn/start",
+                    cancel,
+                )
+                .await
+            {
+                tracing::error!("failed to send follow-up turn: {err}");
+            }
+        });
+    }
+
+    async fn approval_input<T: Serialize>(
+        &self,
+        request_type: &str,
+        item_id: &str,
+        params: &T,
+    ) -> Result<Value, ExecutorError> {
+        let mut input = Map::new();
+        input.insert(
+            "requestType".to_string(),
+            Value::String(request_type.to_string()),
+        );
+        input.insert(
+            "params".to_string(),
+            serde_json::to_value(params)
+                .map_err(|err| ExecutorError::Io(io::Error::other(err.to_string())))?,
+        );
+        if let Some(item) = self.items_by_id.lock().await.get(item_id).cloned() {
+            input.insert(
+                "item".to_string(),
+                serde_json::to_value(item)
+                    .map_err(|err| ExecutorError::Io(io::Error::other(err.to_string())))?,
+            );
+        }
+        Ok(Value::Object(input))
+    }
+
+    fn command_approval_decision(
+        &self,
+        status: &ApprovalStatus,
+    ) -> (CommandExecutionApprovalDecision, Option<String>) {
+        if self.auto_approve {
+            return (CommandExecutionApprovalDecision::AcceptForSession, None);
+        }
+
+        match status {
+            ApprovalStatus::Approved => (CommandExecutionApprovalDecision::Accept, None),
+            ApprovalStatus::Denied { reason } => {
+                let feedback = reason
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                if feedback.is_some() {
+                    (CommandExecutionApprovalDecision::Cancel, feedback)
+                } else {
+                    (CommandExecutionApprovalDecision::Decline, None)
+                }
+            }
+            ApprovalStatus::TimedOut | ApprovalStatus::Pending => {
+                (CommandExecutionApprovalDecision::Decline, None)
+            }
+        }
+    }
+
+    fn file_change_approval_decision(
+        &self,
+        status: &ApprovalStatus,
+    ) -> (FileChangeApprovalDecision, Option<String>) {
+        if self.auto_approve {
+            return (FileChangeApprovalDecision::AcceptForSession, None);
+        }
+
+        match status {
+            ApprovalStatus::Approved => (FileChangeApprovalDecision::Accept, None),
+            ApprovalStatus::Denied { reason } => {
+                let feedback = reason
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                if feedback.is_some() {
+                    (FileChangeApprovalDecision::Cancel, feedback)
+                } else {
+                    (FileChangeApprovalDecision::Decline, None)
+                }
+            }
+            ApprovalStatus::TimedOut | ApprovalStatus::Pending => {
+                (FileChangeApprovalDecision::Decline, None)
+            }
+        }
+    }
+
+    fn legacy_review_decision(&self, status: &ApprovalStatus) -> (ReviewDecision, Option<String>) {
+        if self.auto_approve {
+            return (ReviewDecision::ApprovedForSession, None);
+        }
+
+        match status {
             ApprovalStatus::Approved => (ReviewDecision::Approved, None),
             ApprovalStatus::Denied { reason } => {
                 let feedback = reason
@@ -362,70 +565,29 @@ impl AppServerClient {
                     (ReviewDecision::Denied, None)
                 }
             }
-            ApprovalStatus::TimedOut => (ReviewDecision::Denied, None),
-            ApprovalStatus::Pending => (ReviewDecision::Denied, None),
-        };
-        Ok(outcome)
-    }
-
-    async fn enqueue_feedback(&self, message: String) {
-        if message.trim().is_empty() {
-            return;
-        }
-        let mut guard = self.pending_feedback.lock().await;
-        guard.push_back(message);
-    }
-
-    async fn flush_pending_feedback(&self) {
-        let messages: Vec<String> = {
-            let mut guard = self.pending_feedback.lock().await;
-            guard.drain(..).collect()
-        };
-
-        if messages.is_empty() {
-            return;
-        }
-
-        let Some(conversation_id) = *self.conversation_id.lock().await else {
-            tracing::warn!(
-                "pending Codex feedback but conversation id unavailable; dropping {} messages",
-                messages.len()
-            );
-            return;
-        };
-
-        for message in messages {
-            let trimmed = message.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            self.spawn_user_message(conversation_id, format!("User feedback: {trimmed}"));
+            ApprovalStatus::TimedOut | ApprovalStatus::Pending => (ReviewDecision::Denied, None),
         }
     }
 
-    fn spawn_user_message(&self, conversation_id: ThreadId, message: String) {
-        let peer = self.rpc().clone();
-        let cancel = self.cancel.clone();
-        let request = ClientRequest::SendUserMessage {
-            request_id: peer.next_request_id(),
-            params: SendUserMessageParams {
-                conversation_id,
-                items: vec![InputItem::Text { text: message }],
-            },
+    async fn cache_notification_item(&self, notification: &ServerNotification) {
+        let item = match notification {
+            ServerNotification::ItemStarted(payload) => Some(payload.item.clone()),
+            ServerNotification::ItemCompleted(payload) => Some(payload.item.clone()),
+            _ => None,
         };
-        tokio::spawn(async move {
-            if let Err(err) = peer
-                .request::<SendUserMessageResponse, _>(
-                    request_id(&request),
-                    &request,
-                    "sendUserMessage",
-                    cancel,
-                )
-                .await
-            {
-                tracing::error!("failed to send user message: {err}");
-            }
-        });
+
+        let Some(item) = item else {
+            return;
+        };
+
+        let Some(item_id) = thread_item_id(&item) else {
+            return;
+        };
+
+        self.items_by_id
+            .lock()
+            .await
+            .insert(item_id.to_string(), item);
     }
 }
 
@@ -475,21 +637,58 @@ impl JsonRpcCallbacks for AppServerClient {
         raw: &str,
         notification: JSONRPCNotification,
     ) -> Result<bool, ExecutorError> {
-        let raw =
-            if let Ok(mut server_notification) = serde_json::from_str::<ServerNotification>(raw) {
-                if let ServerNotification::SessionConfigured(session_configured) =
-                    &mut server_notification
-                {
-                    // history can be large, which might get truncated during transmission, corrupting the JSON line and losing valuable session and model information.
-                    session_configured.initial_messages = None;
-                    Cow::Owned(serde_json::to_string(&server_notification)?)
-                } else {
-                    Cow::Borrowed(raw)
-                }
+        let parsed_notification = serde_json::from_str::<ServerNotification>(raw).ok();
+        if let Some(server_notification) = parsed_notification.as_ref() {
+            self.cache_notification_item(server_notification).await;
+        }
+
+        let raw = if let Some(mut server_notification) = parsed_notification.clone() {
+            if let ServerNotification::SessionConfigured(session_configured) =
+                &mut server_notification
+            {
+                // history can be large, which might get truncated during transmission, corrupting the JSON line and losing valuable session and model information.
+                session_configured.initial_messages = None;
+                Cow::Owned(serde_json::to_string(&server_notification)?)
             } else {
                 Cow::Borrowed(raw)
-            };
+            }
+        } else {
+            Cow::Borrowed(raw)
+        };
         self.log_writer.log_raw(&raw).await?;
+
+        if let Some(server_notification) = parsed_notification {
+            if let ServerNotification::TurnCompleted(TurnCompletedNotification {
+                thread_id,
+                turn,
+            }) = server_notification
+            {
+                let has_finished = matches!(
+                    turn.status,
+                    TurnStatus::Completed | TurnStatus::Interrupted | TurnStatus::Failed
+                );
+
+                if has_finished
+                    && matches!(turn.status, TurnStatus::Completed)
+                    && self.commit_reminder
+                    && !self.commit_reminder_sent.swap(true, Ordering::SeqCst)
+                    && let status = self.repo_context.check_uncommitted_changes().await
+                    && !status.is_empty()
+                {
+                    let prompt = format!("{}\n{}", self.commit_reminder_prompt, status);
+                    self.spawn_user_message(thread_id, prompt);
+                    return Ok(false);
+                }
+
+                if self.flush_pending_feedback().await {
+                    return Ok(false);
+                }
+
+                return Ok(has_finished);
+            }
+
+            return Ok(false);
+        }
 
         let method = notification.method.as_str();
         if !method.starts_with("codex/event") {
@@ -511,10 +710,10 @@ impl JsonRpcCallbacks for AppServerClient {
             && !self.commit_reminder_sent.swap(true, Ordering::SeqCst)
             && let status = self.repo_context.check_uncommitted_changes().await
             && !status.is_empty()
-            && let Some(conversation_id) = *self.conversation_id.lock().await
+            && let Some(thread_id) = self.thread_id.lock().await.clone()
         {
             let prompt = format!("{}\n{}", self.commit_reminder_prompt, status);
-            self.spawn_user_message(conversation_id, prompt);
+            self.spawn_user_message(thread_id, prompt);
             return Ok(false);
         }
 
@@ -547,14 +746,29 @@ where
 fn request_id(request: &ClientRequest) -> RequestId {
     match request {
         ClientRequest::Initialize { request_id, .. }
-        | ClientRequest::NewConversation { request_id, .. }
+        | ClientRequest::ThreadStart { request_id, .. }
         | ClientRequest::GetAuthStatus { request_id, .. }
-        | ClientRequest::ResumeConversation { request_id, .. }
-        | ClientRequest::AddConversationListener { request_id, .. }
-        | ClientRequest::SendUserMessage { request_id, .. }
+        | ClientRequest::ThreadResume { request_id, .. }
+        | ClientRequest::TurnStart { request_id, .. }
         | ClientRequest::ReviewStart { request_id, .. }
         | ClientRequest::McpServerStatusList { request_id, .. } => request_id.clone(),
         _ => unreachable!("request_id called for unsupported request variant"),
+    }
+}
+
+fn thread_item_id(item: &ThreadItem) -> Option<&str> {
+    match item {
+        ThreadItem::UserMessage { id, .. }
+        | ThreadItem::AgentMessage { id, .. }
+        | ThreadItem::Reasoning { id, .. }
+        | ThreadItem::CommandExecution { id, .. }
+        | ThreadItem::FileChange { id, .. }
+        | ThreadItem::McpToolCall { id, .. }
+        | ThreadItem::CollabAgentToolCall { id, .. }
+        | ThreadItem::WebSearch { id, .. }
+        | ThreadItem::ImageView { id, .. }
+        | ThreadItem::EnteredReviewMode { id, .. }
+        | ThreadItem::ExitedReviewMode { id, .. } => Some(id.as_str()),
     }
 }
 
