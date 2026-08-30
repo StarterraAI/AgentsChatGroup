@@ -134,12 +134,94 @@ Example prompt: *"List the last 10 runs for the web scraper Actor and show logs 
 
 ---
 
+## Xquik Public X Actors
+
+Keep every existing Actor workflow available.
+Use these optional Actors for focused public X research:
+
+| Goal | Actor | REST selector | Actor ID |
+|---|---|---|---|
+| Posts, timelines, lists, and engagement | [X Tweet Scraper](https://apify.com/xquik/x-tweet-scraper) | `xquik~x-tweet-scraper` | `wAusCMrm284Voaw86` |
+| Followers, lists, communities, and overlap | [X Follower Scraper](https://apify.com/xquik/x-follower-scraper) | `xquik~x-follower-scraper` | `AaT0BcKU5GQh97wdt` |
+
+Before any paid run:
+
+1. Call `APIFY_GET_ACTOR` with the Actor slug or ID.
+2. Inspect the current input schema and live listing price.
+3. Confirm targets, limits, and expected cost with the user.
+4. Run only after explicit approval.
+
+### X Tweet Scraper
+
+Use `APIFY_RUN_ACTOR_SYNC_GET_DATASET_ITEMS` with bounded input:
+
+```json
+{
+  "actorId": "xquik/x-tweet-scraper",
+  "input": {
+    "mode": "search",
+    "searchTerms": ["example topic"],
+    "queryType": "Latest",
+    "outputVariant": "rich",
+    "includeSearchTerms": true,
+    "maxItems": 25
+  },
+  "limit": 25,
+  "waitForFinish": 120
+}
+```
+
+Supported modes are `legacy`, `tweet`, `tweets`, `search`, `profileTweets`,
+`profileReplies`, `profileMedia`, `profileLikes`, `listTweets`, `article`,
+`replies`, `quotes`, `thread`, `retweeters`, and `favoriters`.
+
+Choose `legacy`, `rich`, or `raw` output.
+Choose `legacy`, `camelCase`, or `snake_case` field styling.
+Choose `nested` or `flat` output presets.
+
+### X Follower Scraper
+
+Use `APIFY_RUN_ACTOR_SYNC_GET_DATASET_ITEMS` with bounded input:
+
+```json
+{
+  "actorId": "xquik/x-follower-scraper",
+  "input": {
+    "twitterHandles": ["example_brand"],
+    "relation": "followers",
+    "outputMode": "compact",
+    "includeTargetMetadata": true,
+    "maxItems": 25,
+    "maxItemsPerTarget": 25
+  },
+  "limit": 25,
+  "waitForFinish": 120
+}
+```
+
+Supported relations are `followers`, `following`, `verified_followers`,
+`list_members`, `list_followers`, and `community_members`.
+
+Choose `compact`, `full`, or `raw` output.
+Choose `none`, `first`, or `merge` deduplication.
+Set `overlapMode` to `true` for explicit overlap analysis.
+
+`maxItems` caps the complete run.
+Use positive `maxItemsPerTarget` values only on supported multi-target routes.
+Keep credentials outside Actor input.
+Separate diagnostic rows before analyzing returned public data.
+Set Apify's total-charge limit outside Actor input, when available.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
+---
+
 ## Known Pitfalls
 
 - **Actor input schemas vary wildly:** Every Actor has its own unique input fields. Generic field names like `queries` or `search_terms` will be rejected. Always check the Actor's page on [apify.com/store](https://apify.com/store) for exact field names (e.g., `searchStringsArray` for Google Maps, `startUrls` for web scrapers).
 - **URL format requirements:** Always include the full protocol (`https://` or `http://`) in URLs. Many Actors require URLs as objects with a `url` property: `{"startUrls": [{"url": "https://example.com"}]}`.
 - **Dataset pagination cap:** `APIFY_GET_DATASET_ITEMS` has a max `limit` of 1000 per call. For large datasets, loop with `offset` to collect all items.
-- **Enum values are lowercase:** Most Actors expect lowercase enum values (e.g., `relevance` not `RELEVANCE`, `all` not `ALL`).
+- **Enum case varies:** Treat every enum value as case-sensitive. Read the current Actor schema.
 - **Sync timeout at 5 minutes:** `APIFY_RUN_ACTOR_SYNC_GET_DATASET_ITEMS` has a maximum `waitForFinish` of 300 seconds. For longer runs, use `APIFY_RUN_ACTOR` (async) and poll with `APIFY_GET_DATASET_ITEMS`.
 - **Data volume costs:** Large datasets can be expensive to fetch. Prefer moderate limits and incremental processing to avoid timeouts or memory pressure.
 - **JSON format recommended:** While CSV/XLSX formats are available, JSON is the most reliable for automated processing. Avoid CSV/XLSX for downstream automation.
