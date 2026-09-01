@@ -426,6 +426,7 @@ export const SourceControlFileRow: React.FC<SourceControlFileRowProps> = ({
   const fullPath =
     resolveLocalPathToAbsolutePath(file.path, viewModel.workspacePath) ??
     file.path;
+  const fileName = file.path.split(/[\\/]/).pop() || file.path;
 
   return (
     <div
@@ -456,10 +457,15 @@ export const SourceControlFileRow: React.FC<SourceControlFileRowProps> = ({
           )}
         >
           <SourceControlFileTypeIcon path={file.path} />
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--ink-muted)]"
-          >
-            {file.path}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span className="min-w-0 shrink truncate font-mono text-[12px] text-[var(--ink)]">
+              {fileName}
+            </span>
+            {fileName !== file.path && (
+              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--ink-subtle)]">
+                {file.path}
+              </span>
+            )}
           </span>
         </button>
       </div>
