@@ -1,7 +1,7 @@
 {
   "name": "openteams-frontend",
   "private": true,
-  "version": "1.0.23",
+  "version": "1.0.24-140",
   "packageManager": "pnpm@10.6.2",
   "type": "module",
   "scripts": {
