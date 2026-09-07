@@ -771,7 +771,7 @@ impl SessionWorktreeService {
     }
 
     /// Mark a merge as completed. Called by the merge executor after a
-    /// successful `git merge` / cherry-pick / rebase.
+    /// successful `git merge` / squash / cherry-pick / rebase.
     pub async fn mark_merged(
         &self,
         session_id: Uuid,
@@ -787,7 +787,7 @@ impl SessionWorktreeService {
             SessionWorktreeStatus::Merged,
         )
         .await?;
-        SessionWorktree::record_merged_at(&self.pool, updated.id).await?;
+        let updated = SessionWorktree::record_merged_at(&self.pool, updated.id).await?;
         // Keep agents in the physical worktree after a successful merge. The
         // user can inspect or continue work there until an explicit discard
         // removes it and restores the base workspace path.
@@ -864,8 +864,8 @@ impl SessionWorktreeService {
     /// 2. Verify the base workspace is on the base branch and has no
     ///    in-progress merge/rebase.
     /// 3. Apply the requested integration strategy in the base workspace.
-    ///    The route-facing default is cherry-pick so session commit messages
-    ///    are retained without an additional merge commit.
+    ///    The route-facing default combines the session branch into one
+    ///    single-parent squash commit, so all conflicts surface together.
     /// 4. If conflicts are detected: transition to `needs_conflict_resolution`
     ///    and persist the conflict file list. The worktree is NOT deleted.
     /// 5. If no conflicts: `git commit`, transition to `merged`.
@@ -900,13 +900,15 @@ impl SessionWorktreeService {
             .await
         {
             Ok(MergeOutcome::Success) => {
-                let merged = if merging_row.merge_operation
-                    == Some(SessionWorktreeMergeOperation::CherryPick)
-                {
-                    self.mark_cherry_pick_merged(session_id, &merging_row)
-                        .await?
-                } else {
-                    self.mark_merged(session_id).await?
+                let merged = match merging_row.merge_operation {
+                    Some(
+                        SessionWorktreeMergeOperation::CherryPick
+                        | SessionWorktreeMergeOperation::SquashMerge,
+                    ) => {
+                        self.mark_cursor_integration_merged(session_id, &merging_row)
+                            .await?
+                    }
+                    _ => self.mark_merged(session_id).await?,
                 };
                 Ok(MergeResult {
                     worktree: merged,
@@ -969,8 +971,14 @@ impl SessionWorktreeService {
         row: &SessionWorktree,
         commit_message: Option<&str>,
     ) -> Result<MergeOutcome, SessionWorktreeError> {
-        if row.merge_operation == Some(SessionWorktreeMergeOperation::CherryPick) {
-            return self.execute_cherry_pick(row).await;
+        match row.merge_operation {
+            Some(SessionWorktreeMergeOperation::CherryPick) => {
+                return self.execute_cherry_pick(row).await;
+            }
+            Some(SessionWorktreeMergeOperation::SquashMerge) => {
+                return self.execute_squash_merge(row, commit_message).await;
+            }
+            _ => {}
         }
 
         let base_workspace = PathBuf::from(&row.base_workspace_path);
@@ -1009,6 +1017,137 @@ impl SessionWorktreeService {
             let message = commit_message.unwrap_or("Merge OpenTeams session changes");
             self.run_git(&base_workspace, &["commit", "-m", message])
                 .await?;
+        }
+
+        Ok(MergeOutcome::Success)
+    }
+
+    /// Apply the net tree change since the last integrated session commit as
+    /// one three-way patch. Unlike sequential cherry-picks, this surfaces all
+    /// conflicts in a single batch and creates at most one normal commit.
+    async fn execute_squash_merge(
+        &self,
+        row: &SessionWorktree,
+        commit_message: Option<&str>,
+    ) -> Result<MergeOutcome, SessionWorktreeError> {
+        let base_workspace = PathBuf::from(&row.base_workspace_path);
+        let cursor = match row.base_commit.as_deref() {
+            Some(value) => value.to_string(),
+            None => self
+                .run_git(
+                    &base_workspace,
+                    &[
+                        "merge-base",
+                        row.base_branch.as_str(),
+                        row.branch_name.as_str(),
+                    ],
+                )
+                .await?
+                .trim()
+                .to_string(),
+        };
+        let session_tip = self
+            .run_git(&base_workspace, &["rev-parse", row.branch_name.as_str()])
+            .await?
+            .trim()
+            .to_string();
+        let patch_path =
+            std::env::temp_dir().join(format!("openteams-session-squash-{}.patch", Uuid::new_v4()));
+        let output_arg = format!("--output={}", patch_path.to_string_lossy());
+        let diff_result = self
+            .run_git(
+                &base_workspace,
+                &[
+                    "diff",
+                    "--binary",
+                    "--full-index",
+                    "--find-renames",
+                    cursor.as_str(),
+                    session_tip.as_str(),
+                    output_arg.as_str(),
+                ],
+            )
+            .await;
+        if let Err(err) = diff_result {
+            let _ = tokio::fs::remove_file(&patch_path).await;
+            return Err(err);
+        }
+
+        let patch_is_empty = match tokio::fs::metadata(&patch_path).await {
+            Ok(metadata) => metadata.len() == 0,
+            Err(err) => {
+                let _ = tokio::fs::remove_file(&patch_path).await;
+                return Err(err.into());
+            }
+        };
+        if patch_is_empty {
+            let _ = tokio::fs::remove_file(&patch_path).await;
+            return Ok(MergeOutcome::Success);
+        }
+
+        // Keep unrelated base-workspace edits out of the squash commit. This
+        // preserves their working-tree content while making the integration
+        // index contain only session changes.
+        let pre_merge_dirty_paths = match self.dirty_tracked_paths(&base_workspace).await {
+            Ok(paths) => paths,
+            Err(err) => {
+                let _ = tokio::fs::remove_file(&patch_path).await;
+                return Err(err);
+            }
+        };
+        if let Err(err) = self
+            .unstage_pre_merge_dirty_paths(&base_workspace, &pre_merge_dirty_paths)
+            .await
+        {
+            let _ = tokio::fs::remove_file(&patch_path).await;
+            return Err(err);
+        }
+
+        let patch_arg = patch_path.to_string_lossy().to_string();
+        let apply_result = self
+            .run_git(
+                &base_workspace,
+                &["apply", "--3way", "--index", patch_arg.as_str()],
+            )
+            .await;
+        let _ = tokio::fs::remove_file(&patch_path).await;
+
+        if let Err(err) = apply_result {
+            let conflicts = self.list_unmerged_paths(&base_workspace).await?;
+            if !conflicts.is_empty() {
+                return Ok(MergeOutcome::Conflicts(conflicts));
+            }
+            let _ = self
+                .run_git(&base_workspace, &["reset", "--merge", "HEAD"])
+                .await;
+            return Err(err);
+        }
+
+        let staged_paths = match self
+            .run_git_nul_paths(&base_workspace, &["diff", "--cached", "--name-only", "-z"])
+            .await
+        {
+            Ok(paths) => paths,
+            Err(err) => {
+                let _ = self
+                    .run_git(&base_workspace, &["reset", "--merge", "HEAD"])
+                    .await;
+                return Err(err);
+            }
+        };
+        if !staged_paths.is_empty() {
+            let message = commit_message
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("Merge OpenTeams session changes");
+            if let Err(err) = self
+                .run_git(&base_workspace, &["commit", "-m", message])
+                .await
+            {
+                let _ = self
+                    .run_git(&base_workspace, &["reset", "--merge", "HEAD"])
+                    .await;
+                return Err(err);
+            }
         }
 
         Ok(MergeOutcome::Success)
@@ -1078,7 +1217,7 @@ impl SessionWorktreeService {
             .collect())
     }
 
-    async fn mark_cherry_pick_merged(
+    async fn mark_cursor_integration_merged(
         &self,
         session_id: Uuid,
         row: &SessionWorktree,
@@ -1213,10 +1352,9 @@ impl SessionWorktreeService {
         Ok(())
     }
 
-    /// Complete an integration after all conflicts have been resolved. A
-    /// cherry-pick continues the original session commit (and therefore does
-    /// not create a synthetic merge commit); legacy merge strategies still
-    /// complete their pending merge commit.
+    /// Complete an integration after all conflicts have been resolved.
+    /// Cursor-based strategies create normal single-parent commits; legacy
+    /// merge strategies complete their pending merge commit.
     pub async fn continue_merge(
         &self,
         session_id: Uuid,
@@ -1266,13 +1404,30 @@ impl SessionWorktreeService {
                 .execute_cherry_pick_after(&row, Some(&cherry_pick_head))
                 .await?
             {
-                MergeOutcome::Success => self.mark_cherry_pick_merged(session_id, &row).await,
+                MergeOutcome::Success => {
+                    self.mark_cursor_integration_merged(session_id, &row).await
+                }
                 MergeOutcome::Conflicts(files) => {
                     SessionWorktree::set_conflict_files(&self.pool, row.id, &files)
                         .await
                         .map_err(Into::into)
                 }
             };
+        }
+
+        if row.merge_operation == Some(SessionWorktreeMergeOperation::SquashMerge) {
+            let staged_paths = self
+                .run_git_nul_paths(&base_workspace, &["diff", "--cached", "--name-only", "-z"])
+                .await?;
+            if !staged_paths.is_empty() {
+                let message = commit_message
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or("Merge OpenTeams session changes");
+                self.run_git(&base_workspace, &["commit", "-m", message])
+                    .await?;
+            }
+            return self.mark_cursor_integration_merged(session_id, &row).await;
         }
 
         let message = commit_message
@@ -1304,17 +1459,23 @@ impl SessionWorktreeService {
 
         let base_workspace = PathBuf::from(&row.base_workspace_path);
         // Abort the operation that was persisted when the integration began.
-        // The hard reset fallback restores the base workspace if operation
-        // metadata is already gone.
-        let abort_args = if row.merge_operation == Some(SessionWorktreeMergeOperation::CherryPick) {
-            ["cherry-pick", "--abort"]
+        // Squash integration has no MERGE_HEAD, so reset its index/worktree
+        // changes while preserving unrelated local edits.
+        if row.merge_operation == Some(SessionWorktreeMergeOperation::SquashMerge) {
+            self.run_git(&base_workspace, &["reset", "--merge", "HEAD"])
+                .await?;
         } else {
-            ["merge", "--abort"]
-        };
-        let _ = self.run_git(&base_workspace, &abort_args).await;
-        let _ = self
-            .run_git(&base_workspace, &["reset", "--hard", "HEAD"])
-            .await;
+            let abort_args =
+                if row.merge_operation == Some(SessionWorktreeMergeOperation::CherryPick) {
+                    ["cherry-pick", "--abort"]
+                } else {
+                    ["merge", "--abort"]
+                };
+            let _ = self.run_git(&base_workspace, &abort_args).await;
+            let _ = self
+                .run_git(&base_workspace, &["reset", "--hard", "HEAD"])
+                .await;
+        }
 
         self.abort_merge(session_id, false).await
     }
@@ -1393,11 +1554,43 @@ impl SessionWorktreeService {
             return Ok(false);
         }
 
-        if row.merge_operation == Some(SessionWorktreeMergeOperation::CherryPick) {
-            return Ok(!self
-                .pending_cherry_pick_commits(row, row.base_commit.as_deref())
-                .await?
-                .is_empty());
+        match row.merge_operation {
+            Some(SessionWorktreeMergeOperation::CherryPick) => {
+                return Ok(!self
+                    .pending_cherry_pick_commits(row, row.base_commit.as_deref())
+                    .await?
+                    .is_empty());
+            }
+            Some(SessionWorktreeMergeOperation::SquashMerge) => {
+                let cursor = match row.base_commit.as_deref() {
+                    Some(value) => value.to_string(),
+                    None => self
+                        .run_git(
+                            &base_workspace,
+                            &[
+                                "merge-base",
+                                row.base_branch.as_str(),
+                                row.branch_name.as_str(),
+                            ],
+                        )
+                        .await?
+                        .trim()
+                        .to_string(),
+                };
+                let changed_paths = self
+                    .run_git(
+                        &base_workspace,
+                        &[
+                            "diff",
+                            "--name-only",
+                            cursor.as_str(),
+                            row.branch_name.as_str(),
+                        ],
+                    )
+                    .await?;
+                return Ok(!changed_paths.trim().is_empty());
+            }
+            _ => {}
         }
 
         let output = Command::new("git")
@@ -1510,7 +1703,7 @@ impl SessionWorktreeService {
         if git_path.join("rebase-merge").exists() || git_path.join("rebase-apply").exists() {
             return Ok(true);
         }
-        Ok(false)
+        Ok(!self.list_unmerged_paths(repo_path).await?.is_empty())
     }
 
     async fn list_unmerged_paths(

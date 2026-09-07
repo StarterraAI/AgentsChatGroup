@@ -159,11 +159,11 @@ pub async fn merge_worktree(
     let result = service
         .perform_merge(
             session.id,
-            // Re-apply the session commits onto the base branch instead of
-            // creating a two-parent merge commit. In particular, resolving a
-            // conflict must not add a synthetic "Merge OpenTeams session
-            // changes" commit on top of the session's own commits.
-            SessionWorktreeMergeOperation::CherryPick,
+            // Integrate the session branch as one combined change. This keeps
+            // the base history free of a synthetic two-parent merge commit
+            // without forcing the user to resolve the same area once per
+            // session commit.
+            SessionWorktreeMergeOperation::SquashMerge,
             payload.target_branch,
             payload.commit_message,
         )

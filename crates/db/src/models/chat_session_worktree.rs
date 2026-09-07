@@ -607,12 +607,14 @@ impl SessionWorktree {
         .await
     }
 
-    /// Stamp `merged_at` when transitioning into `merged`.
+    /// Stamp `merged_at` and clear resolved conflict metadata when
+    /// transitioning into `merged`.
     pub async fn record_merged_at(pool: &SqlitePool, id: Uuid) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(&format!(
             r#"
             UPDATE chat_session_worktrees
             SET merged_at = datetime('now', 'subsec'),
+                conflict_files_json = '[]',
                 updated_at = datetime('now', 'subsec')
             WHERE id = ?1
             {CHAT_SESSION_WORKTREE_RETURNING}

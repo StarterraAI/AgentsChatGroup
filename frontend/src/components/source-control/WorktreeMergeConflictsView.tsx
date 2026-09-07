@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertTriangle,
   Check,
@@ -25,6 +31,10 @@ import {
   WorktreeQuickActionButton,
 } from '@/components/worktree/WorktreeMergeConflictSurface';
 import { CodeMirrorConflictEditor } from './CodeMirrorConflictEditor';
+import {
+  runBulkResolve,
+  type BulkResolveSide,
+} from './mergeConflictBulkResolve';
 
 export interface WorktreeMergeConflictsViewProps {
   sessionId: string;
@@ -264,6 +274,13 @@ export const WorktreeMergeConflictsView: React.FC<
   const [listLoaded, setListLoaded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  // Ref guard so a second click landing before React re-renders cannot start
+  // a parallel bulk run (state updates alone would be too late).
+  const bulkRunningRef = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [currentBranch, setCurrentBranch] = useState('HEAD');
   const [incomingBranch, setIncomingBranch] = useState('session');
@@ -440,6 +457,45 @@ export const WorktreeMergeConflictsView: React.FC<
     }
   };
 
+  const handleBulkResolve = async (side: BulkResolveSide) => {
+    if (bulkRunningRef.current || pendingAction || files.length === 0) return;
+    bulkRunningRef.current = true;
+    setPendingAction(`bulk:${side}`);
+    setBulkProgress({ done: 0, total: files.length });
+    setActionError(null);
+    try {
+      const outcome = await runBulkResolve(
+        sessionId,
+        files,
+        side,
+        undefined,
+        (done, total) => setBulkProgress({ done, total }),
+      );
+      setResolved(new Map());
+      // Refresh first: it clears the action error, so the failure summary
+      // must be applied afterwards to stay visible.
+      await refreshList();
+      if (outcome.failedPath) {
+        setActionError(
+          tr(
+            'worktree.merge.bulkFailed',
+            'Resolved {done} of {total} files; failed on {path}: {error}',
+            {
+              done: outcome.completed,
+              total: outcome.total,
+              path: outcome.failedPath,
+              error: outcome.error ?? '',
+            },
+          ),
+        );
+      }
+    } finally {
+      bulkRunningRef.current = false;
+      setPendingAction(null);
+      setBulkProgress(null);
+    }
+  };
+
   const handleContinue = async () => {
     if (!canContinue) return;
     setPendingAction('continue');
@@ -461,8 +517,8 @@ export const WorktreeMergeConflictsView: React.FC<
         commit_message: commitMessage.trim() || null,
       });
       if (worktree.status === 'needs_conflict_resolution') {
-        // A later commit in the cherry-pick sequence can surface another
-        // conflict. Keep the resolver open and load that next conflict set.
+        // Keep the resolver open if a compatible backend reports another
+        // conflict set after continuing the integration.
         setResolved(new Map());
         await refreshList();
       } else {
@@ -545,6 +601,58 @@ export const WorktreeMergeConflictsView: React.FC<
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-20">
         <div className="max-h-40 shrink-0 border-b border-[var(--hairline)]">
+          <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1">
+            <span className="mr-auto px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-tertiary)]">
+              {tr('worktree.merge.allFilesActions', 'All files')}
+            </span>
+            {(['current', 'session'] as const).map((side) => {
+              const running =
+                pendingAction === `bulk:${side}` && bulkProgress !== null;
+              return (
+                <button
+                  key={side}
+                  type="button"
+                  onClick={() => void handleBulkResolve(side)}
+                  disabled={
+                    listLoading ||
+                    files.length === 0 ||
+                    Boolean(pendingAction)
+                  }
+                  title={
+                    side === 'current'
+                      ? tr(
+                          'worktree.merge.useAllCurrentHint',
+                          'Resolve every conflict file with the current workspace version; files missing there are deleted',
+                        )
+                      : tr(
+                          'worktree.merge.useAllSessionHint',
+                          'Resolve every conflict file with the source worktree version; files missing there are deleted',
+                        )
+                  }
+                  className="inline-flex max-w-full items-center gap-1 truncate whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink-subtle)] transition hover:bg-[var(--surface-3)] hover:text-[var(--ink)] disabled:opacity-40"
+                >
+                  {running && (
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                  )}
+                  {running
+                    ? tr(
+                        'worktree.merge.bulkProgress',
+                        'Resolving {done}/{total}...',
+                        { done: bulkProgress.done, total: bulkProgress.total },
+                      )
+                    : side === 'current'
+                      ? tr(
+                          'worktree.merge.useAllCurrent',
+                          'All files: keep current',
+                        )
+                      : tr(
+                          'worktree.merge.useAllSession',
+                          'All files: use source',
+                        )}
+                </button>
+              );
+            })}
+          </div>
           <ScrollArea className="h-full">
             {files.length === 0 && !listLoading ? (
               <div className="px-3 py-4 text-[12px] text-[var(--ink-tertiary)]">

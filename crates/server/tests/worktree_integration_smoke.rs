@@ -257,6 +257,13 @@ async fn session_worktree_routes_cover_main_merge_conflict_and_cleanup_flows() -
             .and_then(Value::as_bool),
         Some(false)
     );
+    assert_eq!(
+        str_field(
+            data(&merge_response)?.get("worktree").unwrap(),
+            "merge_operation"
+        )?,
+        "squash_merge"
+    );
     assert!(base.join("session.txt").exists());
     assert_eq!(git(&base, &["ls-files", ".openteams"])?, "");
     // Merged worktrees stay active until an explicit discard, so the session

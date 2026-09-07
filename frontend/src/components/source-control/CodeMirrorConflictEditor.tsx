@@ -21,6 +21,7 @@ import type {
   ParsedConflictText,
   WorktreeMergeConflictsViewProps,
 } from './WorktreeMergeConflictsView';
+import { ResizableSplitPane } from './ResizableSplitPane';
 
 interface CodeMirrorConflictEditorProps {
   path: string;
@@ -416,54 +417,58 @@ export const CodeMirrorConflictEditor: React.FC<
       )}
 
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,1fr)_minmax(150px,0.72fr)] divide-y divide-[var(--hairline)] overflow-hidden">
-        <div className="grid min-h-0 grid-cols-1 divide-y divide-[var(--hairline)] overflow-hidden lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-          <CodeEditorPane
-            label={tr('worktree.merge.pane.current', 'Current')}
-            description={tr(
-              'worktree.merge.currentDescription',
-              'Current modification',
-            )}
-            branch={currentBranch}
-            path={path}
-            content={currentPane.content}
-            conflicts={currentPane.regions}
-            selectedConflictId={selectedHunk?.id ?? null}
-            actions={getConflictPaneActions('current', {
-              own: tr('worktree.merge.acceptCurrent', 'Accept current change'),
-              both: tr('worktree.merge.acceptBoth', 'Accept both changes'),
-              ignore: tr('worktree.merge.ignore', 'Ignore'),
-            })}
-            onChooseConflict={chooseCurrentPaneHunk}
-            onEditorReady={(view) => {
-              currentEditorRef.current = view;
-              setEditorMountVersion((version) => version + 1);
-            }}
-            tone="current"
-          />
-          <CodeEditorPane
-            label={tr('worktree.merge.pane.incoming', 'Incoming')}
-            description={tr(
-              'worktree.merge.incomingDescription',
-              'Modification being merged',
-            )}
-            branch={incomingBranch}
-            path={path}
-            content={incomingPane.content}
-            conflicts={incomingPane.regions}
-            selectedConflictId={selectedHunk?.id ?? null}
-            actions={getConflictPaneActions('incoming', {
-              own: tr('worktree.merge.acceptSource', 'Accept incoming change'),
-              both: tr('worktree.merge.acceptBoth', 'Accept both changes'),
-              ignore: tr('worktree.merge.ignore', 'Ignore'),
-            })}
-            onChooseConflict={chooseIncomingPaneHunk}
-            onEditorReady={(view) => {
-              incomingEditorRef.current = view;
-              setEditorMountVersion((version) => version + 1);
-            }}
-            tone="incoming"
-          />
-        </div>
+        <ResizableSplitPane
+          left={
+            <CodeEditorPane
+              label={tr('worktree.merge.pane.current', 'Current')}
+              description={tr(
+                'worktree.merge.currentDescription',
+                'Current modification',
+              )}
+              branch={currentBranch}
+              path={path}
+              content={currentPane.content}
+              conflicts={currentPane.regions}
+              selectedConflictId={selectedHunk?.id ?? null}
+              actions={getConflictPaneActions('current', {
+                own: tr('worktree.merge.acceptCurrent', 'Accept current change'),
+                both: tr('worktree.merge.acceptBoth', 'Accept both changes'),
+                ignore: tr('worktree.merge.ignore', 'Ignore'),
+              })}
+              onChooseConflict={chooseCurrentPaneHunk}
+              onEditorReady={(view) => {
+                currentEditorRef.current = view;
+                setEditorMountVersion((version) => version + 1);
+              }}
+              tone="current"
+            />
+          }
+          right={
+            <CodeEditorPane
+              label={tr('worktree.merge.pane.incoming', 'Incoming')}
+              description={tr(
+                'worktree.merge.incomingDescription',
+                'Modification being merged',
+              )}
+              branch={incomingBranch}
+              path={path}
+              content={incomingPane.content}
+              conflicts={incomingPane.regions}
+              selectedConflictId={selectedHunk?.id ?? null}
+              actions={getConflictPaneActions('incoming', {
+                own: tr('worktree.merge.acceptSource', 'Accept incoming change'),
+                both: tr('worktree.merge.acceptBoth', 'Accept both changes'),
+                ignore: tr('worktree.merge.ignore', 'Ignore'),
+              })}
+              onChooseConflict={chooseIncomingPaneHunk}
+              onEditorReady={(view) => {
+                incomingEditorRef.current = view;
+                setEditorMountVersion((version) => version + 1);
+              }}
+              tone="incoming"
+            />
+          }
+        />
         <CodeResultPane
           title={tr('worktree.merge.pane.result', 'Result')}
           path={path}

@@ -1168,6 +1168,248 @@ async fn cherry_pick_conflict_resolution_does_not_create_merge_commit() {
 }
 
 #[tokio::test]
+async fn squash_merge_combines_session_commits_and_tracks_incremental_cursor() {
+    let pool = setup_pool().await;
+    let service = SessionWorktreeService::new(pool.clone());
+    let session_id = Uuid::new_v4();
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let base = tmp.path().join("base");
+    init_git_repo(&base);
+    std::fs::write(base.join("base-only.txt"), "committed base\n").expect("write base-only file");
+    git(&base, &["add", "base-only.txt"]);
+    git(&base, &["commit", "-m", "add base-only file"]);
+
+    let (worktree, _cleanup) = ensure_test_worktree(&service, session_id, base.clone()).await;
+    let worktree_path = PathBuf::from(&worktree.worktree_path);
+    std::fs::write(worktree_path.join("first.txt"), "first\n").expect("write first change");
+    git(&worktree_path, &["add", "first.txt"]);
+    git(&worktree_path, &["commit", "-m", "first session commit"]);
+    std::fs::write(worktree_path.join("second.txt"), "second\n").expect("write second change");
+    git(&worktree_path, &["add", "second.txt"]);
+    git(&worktree_path, &["commit", "-m", "second session commit"]);
+    std::fs::write(base.join("base-only.txt"), "local base edit\n")
+        .expect("write unrelated local edit");
+
+    let first_result = service
+        .perform_merge(
+            session_id,
+            SessionWorktreeMergeOperation::SquashMerge,
+            None,
+            Some("squash session changes".to_string()),
+        )
+        .await
+        .expect("squash session commits");
+
+    assert!(!first_result.has_conflicts);
+    assert_eq!(first_result.worktree.status, SessionWorktreeStatus::Merged);
+    assert!(base.join("first.txt").exists());
+    assert!(base.join("second.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(base.join("base-only.txt")).expect("read local base edit"),
+        "local base edit\n"
+    );
+    assert_eq!(
+        git(&base, &["show", "HEAD:base-only.txt"]),
+        "committed base",
+        "squash commit must exclude pre-existing base edits"
+    );
+    assert!(
+        git(&base, &["status", "--porcelain", "--untracked-files=no"]).contains("M base-only.txt")
+    );
+    assert_eq!(
+        git(&base, &["log", "-1", "--format=%s"]),
+        "squash session changes"
+    );
+    let head_parents = git(&base, &["rev-list", "--parents", "-n", "1", "HEAD"]);
+    assert_eq!(
+        head_parents.split_whitespace().count(),
+        2,
+        "squash integration must create a normal one-parent commit"
+    );
+    let base_subjects = git(&base, &["log", "--format=%s"]);
+    assert!(!base_subjects.contains("first session commit"));
+    assert!(!base_subjects.contains("second session commit"));
+
+    std::fs::write(worktree_path.join("third.txt"), "third\n").expect("write third change");
+    git(&worktree_path, &["add", "third.txt"]);
+    git(&worktree_path, &["commit", "-m", "third session commit"]);
+
+    let dirty = service
+        .get_latest_for_session(session_id)
+        .await
+        .expect("refresh squash availability")
+        .expect("worktree row");
+    assert_eq!(dirty.status, SessionWorktreeStatus::Dirty);
+    assert!(dirty.has_unmerged_commits);
+
+    let second_result = service
+        .perform_merge(
+            session_id,
+            SessionWorktreeMergeOperation::SquashMerge,
+            None,
+            Some("second squash".to_string()),
+        )
+        .await
+        .expect("squash only new session changes");
+    assert!(!second_result.has_conflicts);
+    assert!(base.join("third.txt").exists());
+    assert_eq!(git(&base, &["log", "-1", "--format=%s"]), "second squash");
+
+    let merged = service
+        .get_latest_for_session(session_id)
+        .await
+        .expect("refresh merged squash")
+        .expect("worktree row");
+    assert_eq!(merged.status, SessionWorktreeStatus::Merged);
+    assert!(!merged.has_unmerged_commits);
+}
+
+#[tokio::test]
+async fn squash_merge_resolves_multi_commit_conflict_once_without_replaying_it() {
+    let pool = setup_pool().await;
+    let service = SessionWorktreeService::new(pool.clone());
+    let session_id = Uuid::new_v4();
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let base = tmp.path().join("base");
+    init_git_repo(&base);
+
+    let (worktree, _cleanup) = ensure_test_worktree(&service, session_id, base.clone()).await;
+    let worktree_path = PathBuf::from(&worktree.worktree_path);
+    std::fs::write(worktree_path.join("README.md"), "session one\n")
+        .expect("write first session conflict");
+    git(&worktree_path, &["add", "README.md"]);
+    git(&worktree_path, &["commit", "-m", "first session conflict"]);
+    std::fs::write(worktree_path.join("README.md"), "session two\n")
+        .expect("write second session conflict");
+    git(&worktree_path, &["add", "README.md"]);
+    git(&worktree_path, &["commit", "-m", "second session conflict"]);
+
+    std::fs::write(base.join("README.md"), "base divergent\n").expect("write base conflict");
+    git(&base, &["add", "README.md"]);
+    git(&base, &["commit", "-m", "base divergent change"]);
+
+    let result = service
+        .perform_merge(
+            session_id,
+            SessionWorktreeMergeOperation::SquashMerge,
+            None,
+            Some("squash conflicting changes".to_string()),
+        )
+        .await
+        .expect("start squash conflict");
+    assert!(result.has_conflicts);
+    assert_eq!(result.conflict_files, vec!["README.md"]);
+
+    service
+        .resolve_conflict_file(
+            session_id,
+            "README.md",
+            Some("resolved once\n"),
+            None,
+            false,
+        )
+        .await
+        .expect("resolve combined conflict");
+    let merged = service
+        .continue_merge(session_id, Some("squash conflicting changes".to_string()))
+        .await
+        .expect("finish squash conflict");
+
+    assert_eq!(merged.status, SessionWorktreeStatus::Merged);
+    assert!(merged.conflict_files().is_empty());
+    assert_eq!(
+        std::fs::read_to_string(base.join("README.md")).expect("read resolved file"),
+        "resolved once\n"
+    );
+    assert!(git(&base, &["diff", "--name-only", "--diff-filter=U"]).is_empty());
+    let head_parents = git(&base, &["rev-list", "--parents", "-n", "1", "HEAD"]);
+    assert_eq!(head_parents.split_whitespace().count(), 2);
+
+    // A later session commit that does not touch README must integrate from
+    // the recorded cursor instead of replaying the already-resolved change.
+    std::fs::write(worktree_path.join("later.txt"), "later\n").expect("write later change");
+    git(&worktree_path, &["add", "later.txt"]);
+    git(&worktree_path, &["commit", "-m", "later session commit"]);
+    let dirty = service
+        .get_latest_for_session(session_id)
+        .await
+        .expect("refresh dirty worktree")
+        .expect("worktree row");
+    assert_eq!(dirty.status, SessionWorktreeStatus::Dirty);
+
+    let repeated = service
+        .perform_merge(
+            session_id,
+            SessionWorktreeMergeOperation::SquashMerge,
+            None,
+            Some("later squash".to_string()),
+        )
+        .await
+        .expect("merge later change without replaying old conflict");
+    assert!(!repeated.has_conflicts);
+    assert!(base.join("later.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(base.join("README.md")).expect("read retained resolution"),
+        "resolved once\n"
+    );
+}
+
+#[tokio::test]
+async fn abort_squash_conflict_preserves_unrelated_base_edits() {
+    let pool = setup_pool().await;
+    let service = SessionWorktreeService::new(pool.clone());
+    let session_id = Uuid::new_v4();
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let base = tmp.path().join("base");
+    init_git_repo(&base);
+    std::fs::write(base.join("base-only.txt"), "committed base\n").expect("write base-only file");
+    git(&base, &["add", "base-only.txt"]);
+    git(&base, &["commit", "-m", "add base-only file"]);
+
+    let (worktree, _cleanup) = ensure_test_worktree(&service, session_id, base.clone()).await;
+    let worktree_path = PathBuf::from(&worktree.worktree_path);
+    std::fs::write(worktree_path.join("README.md"), "session side\n")
+        .expect("write session conflict");
+    git(&worktree_path, &["add", "README.md"]);
+    git(&worktree_path, &["commit", "-m", "session conflict"]);
+
+    std::fs::write(base.join("README.md"), "base side\n").expect("write base conflict");
+    git(&base, &["add", "README.md"]);
+    git(&base, &["commit", "-m", "base conflict"]);
+    std::fs::write(base.join("base-only.txt"), "local base edit\n")
+        .expect("write unrelated local edit");
+
+    let result = service
+        .perform_merge(
+            session_id,
+            SessionWorktreeMergeOperation::SquashMerge,
+            None,
+            Some("aborted squash".to_string()),
+        )
+        .await
+        .expect("start squash conflict");
+    assert!(result.has_conflicts);
+
+    let aborted = service
+        .perform_abort_merge(session_id)
+        .await
+        .expect("abort squash conflict");
+    assert_eq!(aborted.status, SessionWorktreeStatus::Dirty);
+    assert_eq!(
+        std::fs::read_to_string(base.join("README.md")).expect("read restored base file"),
+        "base side\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(base.join("base-only.txt")).expect("read local base edit"),
+        "local base edit\n"
+    );
+    assert!(git(&base, &["diff", "--name-only", "--diff-filter=U"]).is_empty());
+    assert!(
+        git(&base, &["status", "--porcelain", "--untracked-files=no"]).contains("M base-only.txt")
+    );
+}
+
+#[tokio::test]
 async fn perform_merge_allows_untracked_files_in_base_workspace() {
     let pool = setup_pool().await;
     let service = SessionWorktreeService::new(pool.clone());
