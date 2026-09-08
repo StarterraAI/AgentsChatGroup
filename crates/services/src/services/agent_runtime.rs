@@ -1744,7 +1744,7 @@ fn reasoning_capability_for_runner(
             options: strings(["low", "medium", "high"]),
         }),
         BaseCodingAgent::Codex => Some(AgentRuntimeReasoningCapability::Effort {
-            options: strings(["low", "medium", "high", "xhigh", "max"]),
+            options: strings(["low", "medium", "high", "xhigh", "max", "ultra"]),
         }),
         BaseCodingAgent::Droid => Some(AgentRuntimeReasoningCapability::Effort {
             options: strings(["none", "dynamic", "off", "low", "medium", "high"]),
@@ -3391,6 +3391,12 @@ mod tests {
 
     #[test]
     fn reasoning_capabilities_match_current_acp_controls() {
+        assert_eq!(
+            reasoning_capability_for_runner(BaseCodingAgent::Codex),
+            Some(AgentRuntimeReasoningCapability::Effort {
+                options: strings(["low", "medium", "high", "xhigh", "max", "ultra"]),
+            })
+        );
         assert_eq!(
             reasoning_capability_for_runner(BaseCodingAgent::QwenCode),
             Some(AgentRuntimeReasoningCapability::Effort {

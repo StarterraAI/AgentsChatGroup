@@ -18,6 +18,7 @@ const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 
 const CODEX_ALLOWED_MODEL_IDS = new Set([
+  "gpt-6-astra",
   "gpt-5.6",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
@@ -35,6 +36,13 @@ const CODEX_ALLOWED_MODEL_IDS = new Set([
 ])
 
 const CODEX_FALLBACK_MODELS = [
+  {
+    id: "gpt-6-astra",
+    name: "GPT-6-Astra",
+    family: "gpt",
+    release_date: "2026-09-03",
+    cost: { input: 10, output: 50, cache: { read: 1, write: 12.5 } },
+  },
   {
     id: "gpt-5.6-sol",
     name: "GPT-5.6 Sol",

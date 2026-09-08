@@ -535,4 +535,26 @@ mod tests {
         assert_eq!(config["theme"], "SYSTEM");
         assert_eq!(config["language"], "BROWSER");
     }
+
+    #[test]
+    fn current_config_refreshes_builtin_model_recommendations() {
+        let mut config = Config::default();
+        let builtin = config
+            .chat_presets
+            .members
+            .iter_mut()
+            .find(|preset| preset.id == "frontend_engineer")
+            .expect("frontend preset should exist");
+        builtin.recommended_model = Some("gpt-5.2-codex".to_string());
+
+        let config = config.with_completed_chat_presets();
+        let builtin = config
+            .chat_presets
+            .members
+            .iter()
+            .find(|preset| preset.id == "frontend_engineer")
+            .expect("frontend preset should exist");
+
+        assert_eq!(builtin.recommended_model.as_deref(), Some("gpt-6-astra"));
+    }
 }

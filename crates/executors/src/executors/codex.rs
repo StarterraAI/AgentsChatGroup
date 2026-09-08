@@ -31,6 +31,7 @@ fn codex_model_cache_paths() -> Vec<PathBuf> {
 }
 
 const CODEX_MODEL_FALLBACKS: &[&str] = &[
+    "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -123,6 +124,7 @@ pub enum ReasoningEffort {
     High,
     Xhigh,
     Max,
+    Ultra,
 }
 
 /// Model reasoning summary style
@@ -465,7 +467,7 @@ impl StandardCodingAgentExecutor for Codex {
 }
 
 impl Codex {
-    const BASE_COMMAND: &'static str = "npx -y @openai/codex@0.147.0";
+    const BASE_COMMAND: &'static str = "npx -y @openai/codex@0.153.4";
 
     pub fn base_command() -> &'static str {
         Self::BASE_COMMAND
@@ -991,12 +993,13 @@ mod tests {
     }
 
     #[test]
-    fn base_command_uses_codex_0_147_0() {
-        assert_eq!(Codex::base_command(), "npx -y @openai/codex@0.147.0");
+    fn base_command_uses_codex_0_153_4() {
+        assert_eq!(Codex::base_command(), "npx -y @openai/codex@0.153.4");
     }
 
     #[test]
-    fn codex_model_fallbacks_include_latest_gpt_5_6_models() {
+    fn codex_model_fallbacks_include_gpt_6_and_gpt_5_6_models() {
+        assert!(CODEX_MODEL_FALLBACKS.contains(&"gpt-6-astra"));
         assert!(CODEX_MODEL_FALLBACKS.contains(&"gpt-5.6-sol"));
         assert!(CODEX_MODEL_FALLBACKS.contains(&"gpt-5.6-terra"));
         assert!(CODEX_MODEL_FALLBACKS.contains(&"gpt-5.6-luna"));

@@ -1464,6 +1464,23 @@ mod tests {
             );
         }
 
+        let codex_presets = presets
+            .members
+            .iter()
+            .filter(|preset| preset.runner_type.as_deref() == Some("CODEX"))
+            .collect::<Vec<_>>();
+        assert!(!codex_presets.is_empty());
+        for preset in codex_presets {
+            assert!(
+                matches!(
+                    preset.recommended_model.as_deref(),
+                    Some("gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
+                ),
+                "Codex preset `{}` must use a current OpenAI model",
+                preset.id
+            );
+        }
+
         let team = presets
             .teams
             .iter()

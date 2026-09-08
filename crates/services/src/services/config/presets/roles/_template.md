@@ -7,8 +7,8 @@ default_workspace: workspace_path
 # Examples: CODEX, CLAUDE_CODE, GEMINI, QWEN_CODE
 runner_type: CODEX
 # Optional: preferred model under the selected executor.
-# Should match the executor profile model name, e.g. gpt-5.2-codex.
-recommended_model: gpt-5.2-codex
+# Should match the executor profile model name, e.g. gpt-6-astra.
+recommended_model: gpt-6-astra
 selected_skill_ids:
   - skill_id
 ---

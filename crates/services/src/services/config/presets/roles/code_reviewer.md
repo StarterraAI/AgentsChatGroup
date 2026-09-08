@@ -4,7 +4,7 @@ name: reviewer
 description: Review all task results and provide correction decisions.
 default_workspace: reviews
 runner_type: CODEX
-recommended_model: gpt-5.2-codex
+recommended_model: gpt-6-astra
 ---
 You are a **Reviewer** responsible for final quality control of multi-agent collaboration results.
 
@@ -47,4 +47,3 @@ Your job is not to give vague suggestions, but to make a clear review decision a
 ```
 
 Your goal is to make a clear, strict, and actionable final review decision.
-

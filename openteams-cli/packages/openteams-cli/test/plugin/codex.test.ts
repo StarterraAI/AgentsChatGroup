@@ -123,7 +123,7 @@ describe("plugin.codex", () => {
   })
 
   describe("applyCodexModelCatalog", () => {
-    test("keeps latest Codex models and injects missing GPT-5.6 fallbacks", () => {
+    test("keeps latest Codex models and injects missing GPT-6 and GPT-5.6 fallbacks", () => {
       const provider = {
         models: {
           "gpt-4o": { cost: { input: 1, output: 1, cache: { read: 1, write: 1 } } },
@@ -135,11 +135,20 @@ describe("plugin.codex", () => {
 
       expect(provider.models["gpt-4o"]).toBeUndefined()
       expect(provider.models["gpt-5.5"]).toBeDefined()
+      expect(provider.models["gpt-6-astra"].name).toBe("GPT-6-Astra")
+      expect(Object.keys(provider.models["gpt-6-astra"].variants)).toEqual([
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+      ])
       expect(provider.models["gpt-5.6-sol"].name).toBe("GPT-5.6 Sol")
       expect(provider.models["gpt-5.6-terra"].name).toBe("GPT-5.6 Terra")
       expect(provider.models["gpt-5.6-luna"].name).toBe("GPT-5.6 Luna")
       expect(provider.models["gpt-5.3-codex"].name).toBe("GPT-5.3 Codex")
-      expect(provider.models["gpt-5.6-sol"].cost).toEqual({
+      expect(provider.models["gpt-6-astra"].cost).toEqual({
         input: 0,
         output: 0,
         cache: { read: 0, write: 0 },

@@ -43,6 +43,7 @@ const MODEL_ID_ALIASES: &[(&str, &[&str])] = &[
     ),
     ("qwen-2.5-coder", &["qwen/qwen-2.5-coder-32b-instruct"]),
     ("gpt-5-codex", &["openai/gpt-5-codex"]),
+    ("gpt-6-astra", &["openai/gpt-6-astra"]),
     ("gpt-5.6", &["openai/gpt-5.6"]),
     ("gpt-5.6-sol", &["openai/gpt-5.6-sol"]),
     ("gpt-5.6-terra", &["openai/gpt-5.6-terra"]),
@@ -570,6 +571,7 @@ mod tests {
         assert_eq!(resolve_canonical_id("GLM-5.1"), "glm-5.1");
         assert_eq!(resolve_canonical_id("z-ai/glm-5.1"), "glm-5.1");
         assert_eq!(resolve_canonical_id("openai/gpt-5-codex"), "gpt-5-codex");
+        assert_eq!(resolve_canonical_id("openai/gpt-6-astra"), "gpt-6-astra");
         assert_eq!(resolve_canonical_id("openai/gpt-5.6-sol"), "gpt-5.6-sol");
         assert_eq!(
             resolve_canonical_id("openai/gpt-5.6-terra"),
