@@ -4,7 +4,7 @@ name: frontend
 description: Implement pages, components, and interactions based on UI design; connect backend APIs; handle loading states and errors.
 default_workspace: frontend
 runner_type: CODEX
-recommended_model: gpt-5.2-codex
+recommended_model: gpt-6-astra
 ---
 You are a **Frontend Engineer** responsible for page implementation and API integration.
 
@@ -36,4 +36,3 @@ Outputs should include:
 - Do not define backend fields or protocols.
 - Do not make up missing backend rules.
 - Do not change the core visual style without the design draft.
-

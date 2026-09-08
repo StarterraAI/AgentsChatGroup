@@ -568,7 +568,8 @@ mod tests {
     fn default_profiles_include_supported_codex_models() {
         let profiles = ExecutorConfigs::from_defaults();
 
-        assert_codex_model(&profiles, "DEFAULT", "gpt-5.6-sol");
+        assert_codex_model(&profiles, "DEFAULT", "gpt-6-astra");
+        assert_codex_model(&profiles, "GPT_6_ASTRA", "gpt-6-astra");
         assert_codex_model(&profiles, "GPT_5.6_SOL", "gpt-5.6-sol");
         assert_codex_model(&profiles, "GPT_5.6_TERRA", "gpt-5.6-terra");
         assert_codex_model(&profiles, "GPT_5.6_LUNA", "gpt-5.6-luna");
@@ -735,9 +736,14 @@ mod tests {
         assert_claude_model(&profiles, "SONNET_1M", "sonnet[1m]");
         assert_claude_model(&profiles, "OPUS_1M", "opus[1m]");
         assert_claude_model(&profiles, "OPUSPLAN", "opusplan");
-        assert_claude_model(&profiles, "OPUS_4_6", "opus");
-        assert_claude_model(&profiles, "SONNET_4_6", "sonnet");
-        assert_claude_model(&profiles, "OPUS_4_7", "opus");
+        assert_claude_model(&profiles, "OPUS_4_6", "claude-opus-4-6");
+        assert_claude_model(&profiles, "SONNET_4_6", "claude-sonnet-4-6");
+        assert_claude_model(&profiles, "OPUS_4_7", "claude-opus-4-7");
+        assert_claude_model(&profiles, "OPUS_4_8", "claude-opus-4-8");
+        assert_claude_model(&profiles, "FABLE_5_1", "claude-fable-5-1");
+        assert_claude_model(&profiles, "OPUS_5", "claude-opus-5");
+        assert_claude_model(&profiles, "SONNET_5", "claude-sonnet-5");
+        assert_claude_model(&profiles, "HAIKU_4_5", "claude-haiku-4-5-20251001");
         assert_kimi_model(
             &profiles,
             "moonshot-cn/kimi-k2.6,thinking",

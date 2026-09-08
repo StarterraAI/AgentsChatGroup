@@ -681,7 +681,7 @@ mod tests {
             .expect("frontend preset should exist");
         assert_eq!(builtin.name, "frontend");
         assert_eq!(builtin.runner_type.as_deref(), Some("CODEX"));
-        assert_eq!(builtin.recommended_model.as_deref(), Some("gpt-5.2-codex"));
+        assert_eq!(builtin.recommended_model.as_deref(), Some("gpt-6-astra"));
         assert_ne!(builtin.system_prompt, "old prompt");
     }
 

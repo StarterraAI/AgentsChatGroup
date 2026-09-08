@@ -356,7 +356,7 @@ async fn delete_custom_provider(
     // 任务7：如果删除的是当前默认 Provider，自动回退到 anthropic
     if config.provider.default == id {
         config.provider.default = "anthropic".to_string();
-        config.model.default = "claude-sonnet-4-20250514".to_string();
+        config.model.default = CliConfig::default_config().model.default;
     }
 
     if let Err(e) = write_cli_config_to_disk(&config).await {

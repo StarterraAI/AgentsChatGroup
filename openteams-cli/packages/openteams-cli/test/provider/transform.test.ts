@@ -2220,6 +2220,21 @@ describe("ProviderTransform.variants", () => {
   })
 
   describe("@ai-sdk/openai", () => {
+    test("gpt-6-astra exposes only its supported reasoning efforts", () => {
+      const model = createMockModel({
+        id: "gpt-6-astra",
+        providerID: "openai",
+        api: {
+          id: "gpt-6-astra",
+          url: "https://api.openai.com",
+          npm: "@ai-sdk/openai",
+        },
+        release_date: "2026-09-03",
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["low", "medium", "high", "xhigh", "max", "ultra"])
+    })
+
     test("gpt-5-pro returns empty object", () => {
       const model = createMockModel({
         id: "gpt-5-pro",

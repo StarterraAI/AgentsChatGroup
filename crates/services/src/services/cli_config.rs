@@ -137,7 +137,7 @@ impl CliConfig {
                 custom_providers: None,
             },
             model: ModelConfig {
-                default: "claude-sonnet-4-20250514".to_string(),
+                default: "claude-sonnet-5".to_string(),
                 anthropic: None,
                 openai: None,
                 google: None,
@@ -355,5 +355,18 @@ impl OpenTeamsCliConfig {
 
     pub fn config_dir() -> Option<std::path::PathBuf> {
         dirs::home_dir().map(|h| h.join(".config").join("openteams-cli"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CliConfig;
+
+    #[test]
+    fn default_config_uses_current_anthropic_model() {
+        let config = CliConfig::default_config();
+
+        assert_eq!(config.provider.default, "anthropic");
+        assert_eq!(config.model.default, "claude-sonnet-5");
     }
 }
